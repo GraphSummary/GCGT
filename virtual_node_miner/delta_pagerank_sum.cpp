@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <cmath>
 
+#define VIRTUAL_NODE_START -1
+
 using namespace std;
 
 double d = 0.85;
@@ -23,14 +25,14 @@ struct Page
     double oldDelta= 0;
     double recvDelta = 1-d;
     int weight=1; // 如果时真实点则为1，虚拟点则为其通过虚拟边可以到达的真实点的个数
-    void print(){
-        cout << "value=" << value << ", oldDelta=" << oldDelta << ", recvDelta=" <<  recvDelta << "weight=" << weight << endl;
-        cout << "outPage=";
-        for(auto p : outPage){
-            cout << p << ", ";
-        }
-        cout << "\n-------------------" << endl;
-    }
+    // void print(){
+    //     cout << "value=" << value << ", oldDelta=" << oldDelta << ", recvDelta=" <<  recvDelta << "weight=" << weight << endl;
+    //     cout << "outPage=";
+    //     for(auto p : outPage){
+    //         cout << p << ", ";
+    //     }
+    //     cout << "\n-------------------" << endl;
+    // }
 };
 // 用于普通图的节点
 struct Page_de
@@ -89,7 +91,7 @@ public:
                 cout << "line94[read_data]: " << to << "，"<< line << endl;
             }
             links = links.substr(spacepos + 1);
-            linkvec.push_back(to);
+            linkvec.emplace_back(to);
         }
         k = source;
         data = linkvec;
@@ -118,7 +120,7 @@ public:
             else{
                 v = vertex_map[v];
             }
-            pages[u].outPage.push_back(v);
+            pages[u].outPage.emplace_back(v);
             pages[u].outAdjNum += pages[v].weight;
         }
         inFile.close();
@@ -148,7 +150,7 @@ public:
     //         else{
     //             v = vertex_map[v];
     //         }
-    //         pages_new[u].outPage.push_back(v);
+    //         pages_new[u].outPage.emplace_back(v);
     //     }
     //     inFile.close();
     // }
@@ -159,6 +161,10 @@ public:
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
         }
+        int nodes_numble, v_nodes_numble;
+        inFile >> nodes_numble >> v_nodes_numble;  // 文件第一行表示所有顶点个数
+        // 申请node数组
+        pages = new Page[nodes_numble + 1];
         int u, v;
         while(inFile >> u >> v){
             if(vertex_map.find(u) == vertex_map.end()){
@@ -172,7 +178,7 @@ public:
             pages[u].weight = v;
             if(v > 1){
                 pages[u].recvDelta = 0; // 虚拟点初始值为0
-                if(virtual_node_start == 0){
+                if(virtual_node_start == VIRTUAL_NODE_START){
                     virtual_node_start = u;
                 }
             }
@@ -180,15 +186,20 @@ public:
         inFile.close();
     }
 
-    int run(string edge_new_path_, string filename)
-    {   
+    int run(string edge_new_path_, string filename){   
         string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶点的对应关系
         string e_path = "./out/" + filename + ".e"; // 压缩图边文件，超点之间的边
         string edge_new_path = edge_new_path_;  // 原始图文件，即解压之后的图
         string outPath = "./out/pr_delta_sum.txt";   // 保存最终计算结果
         string outPath_compress = "./out/pr_delta_sum_com.txt";   // 保存第一次收敛结果
+        
+        auto load_data_time = clock();
         read_nodes(v_path);
         getPagesVec(e_path);
+        cout << "load_data_time=" << (clock() - load_data_time)/ CLOCKS_PER_SEC << endl;
+        if(virtual_node_start == -1){
+            virtual_node_start = vertex_num;
+        }
 
         cout << "vertex_num=" << vertex_num << ", virtual_node_start=" << virtual_node_start << endl;
         // 将运行时间写入文件
@@ -233,9 +244,8 @@ public:
                 }
             }
 
-            for(auto &p_: pages)
-            {
-                Page& page = p_.second;
+            for(int i = 0; i < vertex_num; i++){
+                Page& page = pages[i];
                 delta_sum += page.recvDelta;
                 page.value += page.recvDelta;
                 page.oldDelta = page.recvDelta;  // 必须更新
@@ -256,21 +266,24 @@ public:
         // 测试: 输出压缩计算的结果
         cout << "\nout path: " << outPath_compress << endl;
         ofstream fout_com(outPath_compress);
-        for(auto &p_: pages){
-            if(p_.second.weight == 1){ // 只写入真实点
-                fout_com << vertex_reverse_map[p_.first] << ' ' << p_.second.value << endl;
+        for(int i = 0; i < vertex_num; i++){
+            Page& p_ = pages[i];
+            if(p_.weight == 1){ // 只写入真实点
+                fout_com << vertex_reverse_map[i] << ' ' << p_.value << endl;
             }
         }
         fout_com.close();
          
     }
-    ~DeltaPageRankSum(){
-    }
+    // ~DeltaPageRankSum(){
+    //     delete pages;
+    // }
 public:
-    unordered_map<int, Page> pages; //pages存放页面向量，大小为N
+    // unordered_map<int, Page> pages; //pages存放页面向量，大小为N
+    Page* pages; //pages存放页面向量，大小为N
     unordered_map<int, int> vertex_map; //原id: 新id
     unordered_map<int, int> vertex_reverse_map; // 新id: 原id
-    int virtual_node_start=0; // 虚拟点的第一个id
+    int virtual_node_start=VIRTUAL_NODE_START; // 虚拟点的第一个id
     int vertex_num = 0; // 所有点的个数
 };
 
