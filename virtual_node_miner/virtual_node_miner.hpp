@@ -14,8 +14,10 @@
 
 #define MAX_HASH 1610612741
 #define K 10
-#define CLUSTER_THRESHOLD 30
-#define VIRTUAL_THRESHOLD 10
+// #define CLUSTER_THRESHOLD 30
+// #define VIRTUAL_THRESHOLD 20
+int CLUSTER_THRESHOLD = 30;
+int VIRTUAL_THRESHOLD = 20;
 
 using adjlist = std::vector<int>;
 using cluster = std::pair<int, int>;
@@ -91,7 +93,7 @@ public:
         }
 
         if (node.depth < outlinks.size()) {
-            int child = outlinks[node.depth];
+            int child = outlinks[node.depth]; // 需要放置的点
             if (node.children.find(child) == node.children.end()) {
                 pt_node new_node;
                 new_node.depth = node.depth + 1;
@@ -152,8 +154,13 @@ class virtual_node_miner {
     std::vector<hash_row> _hash_mat;
     std::vector<cluster> _clusters;
     std::vector<std::vector<virtual_node>> _cluster_virtual_nodes;
+    std::vector<int> _x; // x[v]: v in V, the number of real nodes that can be reached from v using virtual edges
 
 public:
+    virtual_node_miner(int CLUSTER_THRESHOLD_, int VIRTUAL_THRESHOLD_){
+        CLUSTER_THRESHOLD = CLUSTER_THRESHOLD_;
+        VIRTUAL_THRESHOLD = VIRTUAL_THRESHOLD_;
+    }
 
     void reset_hash_function() {
         _hashes.clear();
@@ -166,13 +173,13 @@ public:
         FILE *fp = fopen(file_path.c_str(), "w");
 
         if (fp == nullptr) {
-            std::cout << "graph file cannot create!" << std::endl;
+            std::cout << "graph file cannot create!" << file_path << std::endl;
             return false;
         }
 
         for (int i = 0; i < _num_node; i++) {
             for (int j = 0; j < _adjlists[i].size(); j++) {
-                fprintf(fp, "%d\t%d\n", i, _adjlists[i][j]);
+                fprintf(fp, "%d %d\n", i, _adjlists[i][j]);
             }
         }
         fclose(fp);
@@ -212,7 +219,7 @@ public:
         _raw_num_edge = _num_edge;
 
         _adjlists.clear();
-        _adjlists.resize(_num_node);
+        _adjlists.resize(_num_node); // _num_node max_id+1
         for (auto edge : edges) {
             _adjlists[edge.first].emplace_back(edge.second);
         }
@@ -238,7 +245,7 @@ public:
     void generate_clusters(int col, int start, int end) {
         int idx = start;
 
-        while (idx < end) {
+        while (idx < end) { // line
             int idx2 = idx;
             while (idx2 < end && _hash_mat[idx].hashes[col] == _hash_mat[idx2].hashes[col]) {
                 idx2++;
@@ -278,7 +285,7 @@ public:
     void handle_cluster(int cluster_id, int start, int end) {
         prefix_tree pt;
 
-        for (int i = start; i < end; i++) {
+        for (int i = start; i < end; i++) { // line
             for (auto v : _adjlists[_hash_mat[i].u]) pt.count_v(v);
         }
 
@@ -344,7 +351,7 @@ public:
 
         _clusters.clear();
         int end = 0;
-        while (end < _num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++;
+        while (end < _num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
         generate_clusters(0, 0, end);
 
         _cluster_virtual_nodes.clear();
@@ -372,6 +379,7 @@ public:
     }
 
     void compress(int pass_num = 3) {
+        printf("CLUSTER_THRESHOLD=%d, VIRTUAL_THRESHOLD=%d\n", CLUSTER_THRESHOLD, VIRTUAL_THRESHOLD);
         for (int pass = 0; pass < pass_num; pass++) {
             one_pass();
 
@@ -382,6 +390,59 @@ public:
                    _num_edge, _raw_num_edge, float(_num_edge) / _raw_num_edge
             );
         }
+        std::string file_path = "./out/result.txt";
+        FILE *fp = fopen(file_path.c_str(), "a+");
+        fprintf(fp, "oldnode:%d\n", _raw_num_node);
+        fprintf(fp, "oldedge:%d\n", _raw_num_edge);
+        fprintf(fp, "nownode:%d\n", _num_node);
+        fprintf(fp, "nowedge:%d\n", _num_edge);
+        fprintf(fp, "edge rate:%f\n", float(_num_node) / _raw_num_node);
+        fprintf(fp, "node rate:%f\n", float(_num_edge) / _raw_num_edge);
+    }
+    
+    int fill_x(int vid){
+        if(_x[vid] != -1){
+            return _x[vid];
+        }
+        int cnt = 0;
+        for(auto id : _adjlists[vid]){
+            cnt += fill_x(id);
+        }
+        return _x[vid] = cnt;
+    }
+
+    void computeX(){
+        _x.clear();
+        _x.resize(_num_node); // _num_node max_id+1
+        for (int i = 0; i < _raw_num_node; i++) {  
+            _x[i] = 1;  // real node
+        }
+        for (int i = _raw_num_node; i < _num_node; i++) {
+            _x[i] = -1; // virtual node
+        }
+        for (int i = _raw_num_node; i < _num_node; i++) {
+            if(_x[i] == -1){
+                fill_x(i);
+            }
+        }
+    }
+    
+    bool write_vertex(const std::string &file_path) {
+        FILE *fp = fopen(file_path.c_str(), "w");
+
+        if (fp == nullptr) {
+            std::cout << "graph file cannot create!" << file_path << std::endl;
+            return false;
+        }
+
+        for (int i = 0; i < _num_node; i++) {
+            if(_adjlists[i].size() > 0){
+                fprintf(fp, "%d %d\n", i, _x[i]);
+            }
+        }
+        fclose(fp);
+
+        return true;
     }
 };
 
