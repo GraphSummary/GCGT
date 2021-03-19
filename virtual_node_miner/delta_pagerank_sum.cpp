@@ -102,6 +102,7 @@ public:
         if(!inFile){
             cout << "open file failed. " << compress_edge_path << endl;
         }
+        cout << "finish read file..." << compress_edge_path << endl;
         int u, v;
         while(inFile >> u >> v){
             if(vertex_map.find(u) == vertex_map.end()){
@@ -161,6 +162,7 @@ public:
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
         }
+        cout << "finish read file..." << compress_vertex_path << endl;
         int nodes_numble, v_nodes_numble;
         inFile >> nodes_numble >> v_nodes_numble;  // 文件第一行表示所有顶点个数
         // 申请node数组
@@ -206,7 +208,7 @@ public:
         string resultPath = "./out/result.txt";
         ofstream fout_1(resultPath, ios::app);
 
-        int step = 1; //统计迭代几轮
+        int step = 0; //统计迭代几轮
         int increment_num = 1;
         double pre_time = 0;
         double sum_time = 0;
@@ -218,7 +220,7 @@ public:
             int shouldStop = 0; //根据oldPR与newPR的差值 判断是否停止迭代
             delta_sum = 0;
 
-            // real node
+            // real node send
             for(int i = 0; i < virtual_node_start; i++){
                 Page& page = pages[i];
                 int outDegree = page.outAdjNum;
@@ -231,7 +233,15 @@ public:
                     pages[p].recvDelta += tmpDelta * pages[p].weight;
                 }
             }
-            // virtual node
+            // virtual node receivel
+            for(int i = virtual_node_start; i < vertex_num; i++){
+                Page& page = pages[i];
+                delta_sum += page.recvDelta;
+                page.value += page.recvDelta;
+                page.oldDelta = page.recvDelta;  // 必须更新
+                page.recvDelta = 0;
+            }
+            // virtual node send
             for(int i = virtual_node_start; i < vertex_num; i++){
                 Page& page = pages[i];
                 int outDegree = page.outAdjNum;
@@ -243,20 +253,20 @@ public:
                     pages[p].recvDelta += tmpDelta * pages[p].weight;
                 }
             }
-
-            for(int i = 0; i < vertex_num; i++){
+            // real node receive
+            for(int i = 0; i < virtual_node_start; i++){
                 Page& page = pages[i];
                 delta_sum += page.recvDelta;
                 page.value += page.recvDelta;
                 page.oldDelta = page.recvDelta;  // 必须更新
                 page.recvDelta = 0;
             }
-
+            step++;
+            // cout << "step=" << step << ", receive_delta_sum_r=" << delta_sum << ", " << "send_delta_sum_r=" << send_delta_sum_r << endl;
             // cout << "step=" << step << ", delta_sum=" << delta_sum << endl;
             if(delta_sum < threshold){
                 break;
             }
-            step++;
         }
         cout << "step=" << step << ", Compressed graph convergence" << ", delta_sum=" << delta_sum << endl;
         pre_time = (clock()-start) / CLOCKS_PER_SEC;
