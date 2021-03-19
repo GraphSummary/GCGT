@@ -71,6 +71,7 @@ class prefix_tree {
 public:
 
     std::vector<pt_node *> potential_nodes;
+    int _raw_num_node=0;
 
     prefix_tree() {
         _root.v = -1;
@@ -108,7 +109,9 @@ public:
     void add_node(int u, adjlist &adj) {
         adjlist outlinks;
         for (auto v : adj) {
-            if (_v_cnt[v] > 1) outlinks.emplace_back(v);
+            // if (_v_cnt[v] > 1) outlinks.emplace_back(v);
+            // 虚拟点不加入
+            if (_v_cnt[v] > 1 && v < _raw_num_node) outlinks.emplace_back(v);
         }
         std::sort(outlinks.begin(), outlinks.end(),
                   [this](const int &a, const int &b) -> bool {
@@ -155,6 +158,7 @@ class virtual_node_miner {
     std::vector<cluster> _clusters;
     std::vector<std::vector<virtual_node>> _cluster_virtual_nodes;
     std::vector<int> _x; // x[v]: v in V, the number of real nodes that can be reached from v using virtual edges
+    int merge_virtual_node_num=0;
 
 public:
     virtual_node_miner(int CLUSTER_THRESHOLD_, int VIRTUAL_THRESHOLD_){
@@ -284,6 +288,7 @@ public:
 
     void handle_cluster(int cluster_id, int start, int end) {
         prefix_tree pt;
+        pt._raw_num_node = _raw_num_node;
 
         for (int i = start; i < end; i++) { // line
             for (auto v : _adjlists[_hash_mat[i].u]) pt.count_v(v);
@@ -333,10 +338,12 @@ public:
 
         // generate min-hash matrix
         _hash_mat.clear();
-        _hash_mat.resize(_num_node);
+        // _hash_mat.resize(_num_node);
+        _hash_mat.resize(_raw_num_node);
 
 #pragma omp parallel for
-        for (int i = 0; i < _num_node; i++) {
+        // for (int i = 0; i < _num_node; i++) {
+        for (int i = 0; i < _raw_num_node; i++) {
             calc_min_hash(i);
         }
 #pragma omp barrier
@@ -351,7 +358,8 @@ public:
 
         _clusters.clear();
         int end = 0;
-        while (end < _num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
+        // while (end < _num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
+        while (end < _raw_num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
         generate_clusters(0, 0, end);
 
         _cluster_virtual_nodes.clear();
@@ -378,8 +386,41 @@ public:
         _num_edge = new_num_edge;
     }
 
+    // edge: u->v, insert v into u
+    void merge_samevirtual_node(int u, int v) {
+        std::vector<int> &u_adjlist = _adjlists[u];
+        std::vector<int>::iterator it = find(u_adjlist.begin(), u_adjlist.end(), v);
+        u_adjlist.erase(it);
+        for (auto id : _adjlists[v]) {
+            if(id >= _raw_num_node && _adjlists[id].size() > 0){
+                printf("这里居然有虚拟点！！！merge_samevirtual_node\n");
+                abort();
+            }
+            u_adjlist.emplace_back(id);
+        }
+        _adjlists[v].clear();
+    }
+
+    void find_samevirtual_node(int u){
+        for (auto v : _adjlists[u]) {
+            if(v >= _raw_num_node && _adjlists[v].size() > 0){
+                // printf("%d -> %d\n", u, v);
+                find_samevirtual_node(v);
+                merge_virtual_node_num++;
+                merge_samevirtual_node(u, v); // u->v, insert v into u
+            }
+        }
+    }
+
+    void deal_samevirtual_node(){
+        for (int u = _raw_num_node; u < _num_node; u++) {
+            find_samevirtual_node(u);
+        }
+    }
+
     void compress(int pass_num = 3) {
         printf("CLUSTER_THRESHOLD=%d, VIRTUAL_THRESHOLD=%d\n", CLUSTER_THRESHOLD, VIRTUAL_THRESHOLD);
+        // pass_num = 1; // 图的压缩次数，如果压缩多次会产生压缩点指向压缩点的情况。多次压缩的化，需要最和合并虚拟点
         for (int pass = 0; pass < pass_num; pass++) {
             one_pass();
 
@@ -389,15 +430,23 @@ public:
                    _num_node, _raw_num_node, float(_num_node) / _raw_num_node,
                    _num_edge, _raw_num_edge, float(_num_edge) / _raw_num_edge
             );
+            // int t = merge_virtual_node_num;
+            // deal_samevirtual_node();
+            // printf("--pass %d: node: %lu/%lu (%.4lf)\tedge: %lu/%lu (%.4lf)\n", pass,
+            //        _num_node, _raw_num_node, float(_num_node) / _raw_num_node,
+            //        _num_edge, _raw_num_edge, float(_num_edge) / _raw_num_edge
+            // );
+            // printf("%d\n", merge_virtual_node_num-t);
         }
         std::string file_path = "./out/result.txt";
         FILE *fp = fopen(file_path.c_str(), "a+");
-        fprintf(fp, "oldnode:%d\n", _raw_num_node);
-        fprintf(fp, "oldedge:%d\n", _raw_num_edge);
-        fprintf(fp, "nownode:%d\n", _num_node);
-        fprintf(fp, "nowedge:%d\n", _num_edge);
-        fprintf(fp, "edge rate:%f\n", float(_num_node) / _raw_num_node);
-        fprintf(fp, "node rate:%f\n", float(_num_edge) / _raw_num_edge);
+        fprintf(fp, "oldnode:%d\n", int(_raw_num_node));
+        fprintf(fp, "oldedge:%d\n", int(_raw_num_edge));
+        fprintf(fp, "nownode:%d\n", int(_num_node));
+        fprintf(fp, "nowedge:%d\n", int(_num_edge));
+        fprintf(fp, "edge rate:%f\n", float(int(_num_node)) / int(_raw_num_node));
+        fprintf(fp, "node rate:%f\n", float(int(_num_edge)) / int(_raw_num_edge));
+        fclose(fp);
     }
     
     int fill_x(int vid){
@@ -425,6 +474,17 @@ public:
                 fill_x(i);
             }
         }
+        // 检测是否存在虚拟点连接虚拟点：
+        int cnt = 0;
+        for (int i = _raw_num_node; i < _num_node; i++) {
+            for(auto id : _adjlists[i]){
+                if(_x[id] > 1){
+                    printf("%d %d, 虚拟点的出邻居居然也是虚拟点。。。\n", i, id);
+                    cnt++;
+                }
+            }
+        }
+        printf("虚拟点的出邻居也是虚拟点: cnt=%d\n", cnt);
     }
     
     bool write_vertex(const std::string &file_path) {
@@ -435,6 +495,8 @@ public:
             return false;
         }
 
+        // node file first line is number of nodes.
+        fprintf(fp, "%d %d\n", int(_num_node), int(_raw_num_node));
         for (int i = 0; i < _num_node; i++) {
             if(_adjlists[i].size() > 0){
                 fprintf(fp, "%d %d\n", i, _x[i]);
