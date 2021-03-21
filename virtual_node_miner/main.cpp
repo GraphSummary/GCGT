@@ -8,7 +8,6 @@
 
 
 int main(int argc,char *argv[]) {
-    // auto start_com = time();
     timer_start(true);
     auto start_com = clock();
     if (argc != 6) {
