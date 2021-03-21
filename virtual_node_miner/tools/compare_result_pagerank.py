@@ -19,6 +19,8 @@ if __name__ == "__main__":
     # print(df2.tail())
     print(df2.shape)
 
+    print(path1)
+    print(path2)
     if(df1.shape != df2.shape):
         print("shapt not same...", df1.shape, df2.shape)
 

@@ -1,6 +1,8 @@
 #-*- coding: UTF-8 -*-   
 '''
-    用于解析运行结果
+    用于解析运行结果: 通过result.txt文件提取本次运行结果，然后通过读取上次保存的csv
+    文件，将内容合并，并生成excel和csv文件
+    
 '''
 import re
 import pandas as pd
@@ -29,7 +31,13 @@ def mergeFile(filestr, savepath):
             break
         data_map[data.split(':')[0]] = data.split(':')[1]
     # 读文件：
-    df = pd.read_csv(savepath + '.csv', index_col=0)
+    try:
+        df = pd.read_csv(savepath + '.csv', index_col=0)
+    except Exception as f:
+        print(f)
+        print("打开失败，重新构建新文件...")
+        df = pd.DataFrame(data_map, index=['']).T
+        df.columns = [data_map['name'][0]+"_"+data_map['threshold'][0]]
     # df.columns = [data_map['edgefile'][0]+"_"+data_map['s_threshold'][0]]
     # newcolumn = data_map['name']+"_"+data_map['threshold']
     newcolumn = len(df.columns)
