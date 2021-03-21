@@ -110,7 +110,7 @@ public:
         adjlist outlinks;
         for (auto v : adj) {
             // if (_v_cnt[v] > 1) outlinks.emplace_back(v);
-            // 虚拟点不加入
+            // 虚拟点不加入,注意： outlinks <= adj
             if (_v_cnt[v] > 1 && v < _raw_num_node) outlinks.emplace_back(v);
         }
         std::sort(outlinks.begin(), outlinks.end(),
@@ -157,7 +157,8 @@ class virtual_node_miner {
     std::vector<hash_row> _hash_mat;
     std::vector<cluster> _clusters;
     std::vector<std::vector<virtual_node>> _cluster_virtual_nodes;
-    std::vector<int> _x; // x[v]: v in V, the number of real nodes that can be reached from v using virtual edges
+    std::vector<int> _x; // _x[v]: v in V, the number of real nodes that can be reached from v using virtual edges
+    std::vector<int> _y; // _y[v]: v's real outadjsum.
     int merge_virtual_node_num=0;
 
 public:
@@ -422,9 +423,10 @@ public:
         printf("CLUSTER_THRESHOLD=%d, VIRTUAL_THRESHOLD=%d\n", CLUSTER_THRESHOLD, VIRTUAL_THRESHOLD);
         // pass_num = 1; // 图的压缩次数，如果压缩多次会产生压缩点指向压缩点的情况。多次压缩的化，需要最和合并虚拟点
         for (int pass = 0; pass < pass_num; pass++) {
+            double start_com = clock();
             one_pass();
-
             refresh_num_edge();
+            std::cout << "compress time=" << (clock() - start_com)/ CLOCKS_PER_SEC << std::endl;
 
             printf("pass %d: node: %lu/%lu (%.4lf)\tedge: %lu/%lu (%.4lf)\n", pass,
                    _num_node, _raw_num_node, float(_num_node) / _raw_num_node,
@@ -487,6 +489,17 @@ public:
         printf("虚拟点的出邻居也是虚拟点: cnt=%d\n", cnt);
     }
     
+    void computeY(){
+        _y.clear();
+        _y.resize(_num_node); // _num_node max_id+1
+        for (int i = 0; i < _num_node; i++) {
+            _y[i] = 0;
+            for(int j : _adjlists[i]){
+                _y[i] += _x[j];
+            }
+        }
+    }
+
     bool write_vertex(const std::string &file_path) {
         FILE *fp = fopen(file_path.c_str(), "w");
 
@@ -496,10 +509,19 @@ public:
         }
 
         // node file first line is number of nodes.
-        fprintf(fp, "%d %d\n", int(_num_node), int(_raw_num_node));
+        // update num
+        int _raw_num_node_new = 0;
+        int _num_node_new = 0;
+        for(int i = 0; i < _raw_num_node; i++){
+            if(_adjlists[i].size() > 0) _raw_num_node_new++;
+        }
+        for(int i = 0; i < _num_node; i++){
+            if(_adjlists[i].size() > 0) _num_node_new++;
+        }
+        fprintf(fp, "%d %d\n", int(_num_node_new), int(_raw_num_node_new));
         for (int i = 0; i < _num_node; i++) {
             if(_adjlists[i].size() > 0){
-                fprintf(fp, "%d %d\n", i, _x[i]);
+                fprintf(fp, "%d %d %d\n", i, _x[i], _y[i]);
             }
         }
         fclose(fp);
