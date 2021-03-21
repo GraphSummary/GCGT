@@ -164,10 +164,11 @@ public:
             cout << "open file failed. " << compress_vertex_path << endl;
         }
         cout << "finish read file..." << compress_vertex_path << endl;
-        int nodes_numble, v_nodes_numble;
-        inFile >> nodes_numble >> v_nodes_numble;  // 文件第一行表示所有顶点个数
+        int all_nodes_numble, real_nodes_numble;
+        inFile >> all_nodes_numble >> real_nodes_numble;  // 文件第一行表示所有顶点个数
+        cout << "all_nodes_numble=" << all_nodes_numble << ", real_nodes_numble=" << real_nodes_numble << endl;
         // 申请node数组
-        pages = new Page[nodes_numble + 1];
+        pages = new Page[all_nodes_numble + 1];
         int u, v, outAdjNum;
         while(inFile >> u >> v >> outAdjNum){
             if(vertex_map.find(u) == vertex_map.end()){
@@ -182,11 +183,13 @@ public:
             pages[u].outAdjNum = outAdjNum;
             if(v > 1){
                 pages[u].recvDelta = 0; // 虚拟点初始值为0
+                // 虚拟点在文件最后，记录第一个出现的位置
                 if(virtual_node_start == VIRTUAL_NODE_START){
                     virtual_node_start = u;
                 }
             }
         }
+        cout << "vertex_num=" << vertex_num << endl;
         inFile.close();
     }
 
@@ -216,6 +219,7 @@ public:
 
         float delta_sum = 0;
         timer_next("compute_graph");
+        cout << "开始计算..." << endl;
         while(1)
         {
             int shouldStop = 0; //根据oldPR与newPR的差值 判断是否停止迭代
@@ -263,7 +267,6 @@ public:
                 page.recvDelta = 0;
             }
             step++;
-            // cout << "step=" << step << ", receive_delta_sum_r=" << delta_sum << ", " << "send_delta_sum_r=" << send_delta_sum_r << endl;
             // cout << "step=" << step << ", delta_sum=" << delta_sum << endl;
             if(delta_sum < threshold){
                 break;
