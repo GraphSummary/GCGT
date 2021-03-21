@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <ctime>
+#include "utils/timer.h"
 
 using namespace std;
 
@@ -24,11 +25,11 @@ public:
     //把每个页面的信息（outPage，value，oldDelta，recvDelta）存到向量里
     void getPagesVec(string file)
     {
-        cout << "finish read file..." << file << endl;
         ifstream inFile(file);
         if(!inFile){
             cout << "open file failed. " << file << endl;
         }
+        cout << "finish read file..." << file << endl;
         int u, v;
         while(inFile >> u >> v){
             if(vertex_map.find(u) == vertex_map.end()){
@@ -57,6 +58,7 @@ public:
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
         }
+        cout << "finish read file..." << compress_vertex_path << endl;
         int nodes_numble, _raw_num_node;
         inFile >> nodes_numble >> _raw_num_node;  // 文件第一行表示所有顶点个数
         cout << nodes_numble << ", " << _raw_num_node << endl;
@@ -64,22 +66,25 @@ public:
         return _raw_num_node;
     }
 
-    int run(string old_dege_file, string filename)
-    {
+    int run(string old_dege_file, string filename){
+        // 初始化计时器 
+        timer_start(true);
         string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶
 
+        timer_next("load_graph");
         int nodes_numble = read_nodes_num(v_path);
         pages = new Page[nodes_numble + 1]; // 申请node数组
         getPagesVec(old_dege_file);   // 边文件路径
         
-        int cnt = 1; //统计迭代几轮
-        double start = clock();
+        int step = 0; //统计迭代几轮
+        float delta_sum = 0;
 
         // 开始迭代
+        timer_next("compute_graph");
         while(1)
         {
             int shouldStop = 0; //根据oldPR与newPR的差值 判断是否停止迭代
-            float delta_sum = 0;
+            delta_sum = 0;
             for(int i = 0; i < nodes_numble; i++){
                 Page& page = pages[i];
                 int outDegree = page.outPage.size();
@@ -87,8 +92,9 @@ public:
                 if(tmpDelta <= threshold){
                     continue;
                 }
-                for(auto p : page.outPage)
+                for(auto p : page.outPage){
                     pages[p].recvDelta += tmpDelta;
+                }
             }
 
             for(int i = 0; i < nodes_numble; i++){
@@ -98,29 +104,30 @@ public:
                 page.oldDelta = page.recvDelta;
                 page.recvDelta = 0;
             }
+            step++;
+            // cout << "step=" << step << ", receive_delta_sum_r=" << delta_sum << << endl;
             if(delta_sum < threshold){
                 break;
             }
-            cnt++;
         }
 
-        printf("%s%d\n", "step = ", cnt);
-        cout << "time: " << (clock()-start) / CLOCKS_PER_SEC<< "s\n";
-        // 将运行时间写入文件
+        cout << "step=" << step << ", normal graph convergence" << ", delta_sum=" << delta_sum << endl;
+        // 将运行次数写入文件
         string resultPath = "./out/result.txt";
         ofstream fout_1(resultPath, ios::app);
-        fout_1 << "normal_graph_time:" << (clock()-start) / CLOCKS_PER_SEC << endl;
-        fout_1 << "normal_graph_step:" << cnt << endl;
+        fout_1 << "normal_graph_step:" << step << endl;
         fout_1.close();
 
         string outPath = "./out/pr_delta_pre.txt";
         cout << "out path: " << outPath << endl;
+        timer_next("write_graph");
         ofstream fout(outPath);
         for(int i = 0; i < nodes_numble; i++){
             Page& page = pages[i];
             fout << vertex_reverse_map[i] << ' ' << page.value << endl;
         }
         fout.close();
+        timer_end(true, "-nor_graph");
         return 0;
     }
     // ~DeltaPageRank(){

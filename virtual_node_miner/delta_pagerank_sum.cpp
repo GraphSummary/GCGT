@@ -8,6 +8,7 @@
 #include <string>
 #include <stdlib.h>
 #include <cmath>
+#include "utils/timer.h"
 
 #define VIRTUAL_NODE_START -1
 
@@ -122,7 +123,7 @@ public:
                 v = vertex_map[v];
             }
             pages[u].outPage.emplace_back(v);
-            pages[u].outAdjNum += pages[v].weight;
+            // pages[u].outAdjNum += pages[v].weight;
         }
         inFile.close();
     }
@@ -167,8 +168,8 @@ public:
         inFile >> nodes_numble >> v_nodes_numble;  // 文件第一行表示所有顶点个数
         // 申请node数组
         pages = new Page[nodes_numble + 1];
-        int u, v;
-        while(inFile >> u >> v){
+        int u, v, outAdjNum;
+        while(inFile >> u >> v >> outAdjNum){
             if(vertex_map.find(u) == vertex_map.end()){
                 vertex_map[u] = vertex_num;
                 vertex_reverse_map[vertex_num] = u;
@@ -178,6 +179,7 @@ public:
                 u = vertex_map[u];
             }
             pages[u].weight = v;
+            pages[u].outAdjNum = outAdjNum;
             if(v > 1){
                 pages[u].recvDelta = 0; // 虚拟点初始值为0
                 if(virtual_node_start == VIRTUAL_NODE_START){
@@ -188,33 +190,32 @@ public:
         inFile.close();
     }
 
-    int run(string edge_new_path_, string filename){   
+    int run(string edge_new_path_, string filename){  
+        // 初始化计时器 
+        timer_start(true);
         string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶点的对应关系
         string e_path = "./out/" + filename + ".e"; // 压缩图边文件，超点之间的边
         string edge_new_path = edge_new_path_;  // 原始图文件，即解压之后的图
         string outPath = "./out/pr_delta_sum.txt";   // 保存最终计算结果
         string outPath_compress = "./out/pr_delta_sum_com.txt";   // 保存第一次收敛结果
         
-        auto load_data_time = clock();
+        timer_next("load_graph");
         read_nodes(v_path);
         getPagesVec(e_path);
-        cout << "load_data_time=" << (clock() - load_data_time)/ CLOCKS_PER_SEC << endl;
         if(virtual_node_start == -1){
             virtual_node_start = vertex_num;
         }
 
         cout << "vertex_num=" << vertex_num << ", virtual_node_start=" << virtual_node_start << endl;
-        // 将运行时间写入文件
+        // 将运行次数写入文件
         string resultPath = "./out/result.txt";
         ofstream fout_1(resultPath, ios::app);
 
         int step = 0; //统计迭代几轮
         int increment_num = 1;
-        double pre_time = 0;
-        double sum_time = 0;
-        double start = clock();
 
         float delta_sum = 0;
+        timer_next("compute_graph");
         while(1)
         {
             int shouldStop = 0; //根据oldPR与newPR的差值 判断是否停止迭代
@@ -269,12 +270,11 @@ public:
             }
         }
         cout << "step=" << step << ", Compressed graph convergence" << ", delta_sum=" << delta_sum << endl;
-        pre_time = (clock()-start) / CLOCKS_PER_SEC;
-        cout << "time: " << pre_time << "s" << endl;
-        fout_1 << "compress_graph_1st_time:" << pre_time << endl;
         fout_1 << "compress_graph_1st_step:" << step << endl;
+        fout_1.close();
         // 测试: 输出压缩计算的结果
         cout << "\nout path: " << outPath_compress << endl;
+        timer_next("write_result");
         ofstream fout_com(outPath_compress);
         for(int i = 0; i < vertex_num; i++){
             Page& p_ = pages[i];
@@ -283,7 +283,7 @@ public:
             }
         }
         fout_com.close();
-         
+        timer_end(true, "-com_graph");
     }
     // ~DeltaPageRankSum(){
     //     delete pages;
