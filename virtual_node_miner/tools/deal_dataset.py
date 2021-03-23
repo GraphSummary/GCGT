@@ -10,7 +10,7 @@ def deal_edge(file_path):
     # 读入文件
     print('read file...', file_path)
     # 先将原边写入文件，再将新边写入文件
-    newpath = file_path[:-2]+'_new.e'
+    newpath = file_path[:file_path.rindex('.')]+'_new.e'
     print(newpath)
     print('write file...', newpath)
     f_w = open(newpath, 'w+', encoding='utf-8')
@@ -21,9 +21,9 @@ def deal_edge(file_path):
         if line == None or len(line) < 2:
             break
         f_w.write(line)
-        num_list = line.split(' ')
+        num_list = line.strip('\t').strip(' ').strip('\n').split(' ')
         if(len(num_list) != 2):
-            print(len, num_list)
+            print("line check: ", len(num_list), num_list)
             exit(0)
         u = int(num_list[0])
         v = int(num_list[1])
@@ -51,7 +51,7 @@ def deal_edge(file_path):
     f_w.close()
 
 if __name__ == "__main__":
-    # 运行命令： python3 /home/yusong/code/GCGT/virtual_node_miner/tools/deal_dataset.py /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all.e
+    # 运行命令： python3 ./tools/deal_dataset.py /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all.e
     # 读入文件路径
     print('参数列表:', str(sys.argv))
     # file_path = input().strip(' ')
