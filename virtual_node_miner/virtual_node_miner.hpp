@@ -391,7 +391,9 @@ public:
     void merge_samevirtual_node(int u, int v) {
         std::vector<int> &u_adjlist = _adjlists[u];
         std::vector<int>::iterator it = find(u_adjlist.begin(), u_adjlist.end(), v);
-        u_adjlist.erase(it);
+        // u_adjlist.erase(it);
+        std::swap(*it, u_adjlist.back());
+        u_adjlist.pop_back();
         for (auto id : _adjlists[v]) {
             if(id >= _raw_num_node && _adjlists[id].size() > 0){
                 printf("这里居然有虚拟点！！！merge_samevirtual_node\n");
