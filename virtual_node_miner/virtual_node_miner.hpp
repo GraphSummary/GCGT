@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
+#include "utils/timer.h"
 
 #define MAX_HASH 1610612741
 #define K 10
@@ -160,6 +161,10 @@ class virtual_node_miner {
     std::vector<int> _x; // _x[v]: v in V, the number of real nodes that can be reached from v using virtual edges
     std::vector<int> _y; // _y[v]: v's real outadjsum.
     int merge_virtual_node_num=0;
+    std::vector<adjlist> _adjlists_in; // 记录入邻居
+    std::unordered_set<int> _active_node_r; // 受影响的真实点
+    std::unordered_set<int> _active_node_v; // 受影响的虚拟点
+
 
 public:
     virtual_node_miner(int CLUSTER_THRESHOLD_, int VIRTUAL_THRESHOLD_){
@@ -198,7 +203,7 @@ public:
         FILE *f = fopen(file_path.c_str(), "r");
 
         if (f == 0) {
-            std::cout << "file cannot open!" << std::endl;
+            std::cout << "file cannot open! " << file_path << std::endl;
             return false;
         }
 
@@ -349,6 +354,7 @@ public:
         }
 #pragma omp barrier
 
+        // _hash_mat：Sort the rows of the matrix lexicographically
         std::sort(_hash_mat.begin(), _hash_mat.end(),
                   [](const hash_row &a, const hash_row &b) -> bool {
                       for (int i = 0; i < a.hashes.size(); i++) {
@@ -426,6 +432,7 @@ public:
         // pass_num = 1; // 图的压缩次数，如果压缩多次会产生压缩点指向压缩点的情况。多次压缩的化，需要最和合并虚拟点
         for (int pass = 0; pass < pass_num; pass++) {
             double start_com = clock();
+            timer_next("compress time=");
             one_pass();
             refresh_num_edge();
             std::cout << "compress time=" << (clock() - start_com)/ CLOCKS_PER_SEC << std::endl;
@@ -452,7 +459,109 @@ public:
         fprintf(fp, "node rate:%f\n", float(int(_num_edge)) / int(_raw_num_edge));
         fclose(fp);
     }
-    
+
+    void remove_adj(std::vector<int> &u_adjlist, int v){
+        std::vector<int>::iterator it = find(u_adjlist.begin(), u_adjlist.end(), v);
+        if(it == u_adjlist.end()){
+            std::cout << "error: " << v << std::endl;
+            exit(0);
+        }
+        std::swap(*it, u_adjlist.back());
+        u_adjlist.pop_back();
+    }
+
+    bool load_update(const std::string &file_path) {
+        FILE *f = fopen(file_path.c_str(), "r");
+        if (f == 0) {
+            std::cout << "file cannot open! " << file_path << std::endl;
+            return false;
+        }
+        int u = 0;
+        int v = 0;
+        char type;
+        int line_cnt = 0;
+        // 数据边加载边处理：
+        while (fscanf(f, "%c %d %d\n", &type, &u, &v) > 0) {
+            line_cnt++;
+            std::cout << "load_update: " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
+            assert(u >= 0);
+            assert(v >= 0);
+            if(type == 'd'){
+                std::vector<int>::iterator iter=find(_adjlists[u].begin(), _adjlists[u].end(), v);
+                if(iter == _adjlists[u].end()){ 
+                    // v在虚拟点中
+                    // std::cout << "v在虚拟点中 " << std::endl;
+                    std::vector<int>::iterator t;
+                    for(auto i : _adjlists[u]){
+                        t =find(_adjlists[i].begin(), _adjlists[i].end(), v);
+                        if(t != _adjlists[i].end()){
+                            // 删除： u->i
+                            // std::cout << "v在虚拟点中 i=" << i << ",u=" << u << std::endl;
+                            remove_adj(_adjlists[u], i);
+                            remove_adj(_adjlists_in[i], u);
+                            // 将其余边添加到 u_adj
+                            for(auto j : _adjlists[i]){
+                                if(j == v){
+                                    continue;
+                                }
+                                // std::cout << "v在虚拟点中 " << j << std::endl;
+                                _adjlists[u].emplace_back(j);
+                                _adjlists_in[j].emplace_back(u);
+                            }                          
+                            _active_node_r.insert(u); 
+                            // _active_node_v.add(v); 
+                            _active_node_v.insert(i); // i可能会被清理掉，因为save降低了
+                            break;
+                        }
+                    }
+                }
+                else{
+                    // u和v直接相连
+                    std::cout << "u和v直接相连 " << std::endl;
+                    std::swap(*iter, _adjlists[u].back());
+                    _adjlists[u].pop_back();
+                    remove_adj(_adjlists_in[v], u);
+                }
+            }
+            else if (type == 'a'){
+                _adjlists[u].emplace_back(v);
+                _adjlists_in[v].emplace_back(u);
+                _active_node_r.insert(u); 
+                // 找和u相似的虚拟点，尝试u和其合并
+                // 利用MinHash来找
+
+            }
+            else{
+                std::cout << "load_update error! " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
+                exit(0);
+            }
+        }
+        fclose(f);
+        std::cout << "line_cnt=" << line_cnt << std::endl;
+        // std::sort(edges.begin(), edges.end());
+
+        return true;
+    }
+
+    void increment_compress(const std::string &file_path){
+        // 得到入邻居
+        _adjlists_in.clear();
+        _adjlists_in.resize(_num_node);
+        for(int i = 0; i < _num_node; i++){
+            for (int j : _adjlists[i]) {
+                _adjlists_in[j].emplace_back(i);
+            }
+        }
+        // 加载数据更新图结构
+        load_update(file_path);
+        // 清理无用的虚拟节点：_active_node_v
+
+        // 将受影响的点重新聚类: _active_node_r
+         
+
+
+    }
+
     int fill_x(int vid){
         if(_x[vid] != -1){
             return _x[vid];
