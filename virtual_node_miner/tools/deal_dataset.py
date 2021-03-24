@@ -10,7 +10,7 @@ def deal_edge(file_path):
     # 读入文件
     print('read file...', file_path)
     # 先将原边写入文件，再将新边写入文件
-    newpath = file_path[:file_path.rindex('.')]+'_new.e'
+    newpath = file_path[:file_path.rindex('.')]+'_base.e'
     print(newpath)
     print('write file...', newpath)
     f_w = open(newpath, 'w+', encoding='utf-8')
