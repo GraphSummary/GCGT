@@ -128,35 +128,6 @@ public:
         inFile.close();
     }
 
-    // 加载新图的边
-    // void getPagesVec_new(string edge_new_path)
-    // {
-    //     cout << "read file... " << edge_new_path << endl;
-    //     ifstream inFile(edge_new_path);
-    //     int u, v;
-    //     while(inFile >> u >> v){
-    //         // pages_new[u].outPage.insert(v);
-    //         if(vertex_map.find(u) == vertex_map.end()){
-    //             vertex_map[u] = vertex_num;
-    //             vertex_reverse_map[vertex_num] = u;
-    //             u = vertex_num++;
-    //         }
-    //         else{
-    //             u = vertex_map[u];
-    //         }
-    //         if(vertex_map.find(v) == vertex_map.end()){
-    //             vertex_map[v] = vertex_num;
-    //             vertex_reverse_map[vertex_num] = v;
-    //             v = vertex_num++;
-    //         }
-    //         else{
-    //             v = vertex_map[v];
-    //         }
-    //         pages_new[u].outPage.emplace_back(v);
-    //     }
-    //     inFile.close();
-    // }
-
     // 读取所有点（包括虚拟点）
     void read_nodes(string compress_vertex_path) {
         ifstream inFile(compress_vertex_path);
@@ -193,32 +164,37 @@ public:
         inFile.close();
     }
 
-    int run(string edge_new_path_, string filename){  
-        // 初始化计时器 
-        timer_start(true);
+    void wirte_result(){
+        string outPath_compress = "./out/pr_delta_sum_com.txt";  // 保存结果
+        cout << "\nout path: " << outPath_compress << endl;
+        ofstream fout_com(outPath_compress);
+        for(int i = 0; i < vertex_num; i++){
+            Page& p_ = pages[i];
+            if(p_.weight == 1){ // 只写入真实点
+                fout_com << vertex_reverse_map[i] << ' ' << p_.value << endl;
+            }
+        }
+        fout_com.close();
+    }
+
+    void load_data(string edge_new_path_, string filename){
         string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶点的对应关系
         string e_path = "./out/" + filename + ".e"; // 压缩图边文件，超点之间的边
-        string edge_new_path = edge_new_path_;  // 原始图文件，即解压之后的图
-        string outPath = "./out/pr_delta_sum.txt";   // 保存最终计算结果
-        string outPath_compress = "./out/pr_delta_sum_com.txt";   // 保存第一次收敛结果
-        
-        timer_next("load_graph");
         read_nodes(v_path);
         getPagesVec(e_path);
         if(virtual_node_start == -1){
             virtual_node_start = vertex_num;
         }
-
         cout << "vertex_num=" << vertex_num << ", virtual_node_start=" << virtual_node_start << endl;
+    }
+
+    int run(){  
         // 将运行次数写入文件
         string resultPath = "./out/result.txt";
         ofstream fout_1(resultPath, ios::app);
-
         int step = 0; //统计迭代几轮
         int increment_num = 1;
-
         float delta_sum = 0;
-        timer_next("compute_graph");
         cout << "开始计算..." << endl;
         while(1)
         {
@@ -242,7 +218,7 @@ public:
             for(int i = virtual_node_start; i < vertex_num; i++){
                 Page& page = pages[i];
                 delta_sum += page.recvDelta;
-                page.value += page.recvDelta;
+                // page.value += page.recvDelta;
                 page.oldDelta = page.recvDelta;  // 必须更新
                 page.recvDelta = 0;
             }
@@ -275,18 +251,6 @@ public:
         cout << "step=" << step << ", Compressed graph convergence" << ", delta_sum=" << delta_sum << endl;
         fout_1 << "compress_graph_1st_step:" << step << endl;
         fout_1.close();
-        // 测试: 输出压缩计算的结果
-        cout << "\nout path: " << outPath_compress << endl;
-        timer_next("write_result");
-        ofstream fout_com(outPath_compress);
-        for(int i = 0; i < vertex_num; i++){
-            Page& p_ = pages[i];
-            if(p_.weight == 1){ // 只写入真实点
-                fout_com << vertex_reverse_map[i] << ' ' << p_.value << endl;
-            }
-        }
-        fout_com.close();
-        timer_end(true, "-com_graph");
     }
     // ~DeltaPageRankSum(){
     //     delete pages;
@@ -301,12 +265,27 @@ public:
 };
 
 int main(int argc, char const *argv[])
-{
+{   
     // 运行命令: ./a.out 0.0000001 ./input/p2p-31_new.e p2p-31
+    // 初始化计时器 
+    timer_start(true);
     threshold = atof(argv[1]);
-    DeltaPageRankSum deltaPageRankSum = DeltaPageRankSum();
     string edge_new_path(argv[2]);
     string filename(argv[3]);
-    deltaPageRankSum.run(edge_new_path, filename);
+
+    // 原图计算
+    DeltaPageRankSum deltaPageRankSum = DeltaPageRankSum();
+    timer_next("load data");
+    deltaPageRankSum.load_data(edge_new_path, filename);
+    timer_next("compute");
+    deltaPageRankSum.run();
+    // timer_next("write result");
+    // deltaPageRankSum.wirte_result();
+ 
+    // 增量计算
+
+
+
+    timer_end(true, "-com_graph");
     return 0;
 }
