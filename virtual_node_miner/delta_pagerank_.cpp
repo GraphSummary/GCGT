@@ -66,8 +66,7 @@ public:
         return _raw_num_node;
     }
 
-    void write_result(){
-        string outPath = "./out/pr_delta_pre.txt";
+    void write_result(const std::string &outPath){
         cout << "out path: " << outPath << endl;
         timer_next("write_graph");
         ofstream fout(outPath);
@@ -82,6 +81,34 @@ public:
         int nodes_numble = read_nodes_num(com_base_v);
         pages = new Page[nodes_numble + 1]; // 申请node数组
         getPagesVec(base_e);   // 边文件路径
+    }
+
+    void amend(int type){
+        {
+            double delta_sum = 0;
+            for(int i = 0; i < vertex_num; i++){
+                Page& page = pages[i];
+                int outDegree = page.outPage.size();
+                // double tmpDelta = page.oldDelta / outDegree * d * type; // type: -1 or 1
+                double tmpDelta = page.value / outDegree * d * type; // type: -1 or 1
+                if(tmpDelta <= threshold){
+                    continue;
+                }
+                for(auto p : page.outPage){
+                    pages[p].recvDelta += tmpDelta;
+                }
+            }
+
+            for(int i = 0; i < vertex_num; i++){
+                Page& page = pages[i];
+                page.value += page.recvDelta;
+                delta_sum += std::abs(page.recvDelta);
+                page.oldDelta = page.recvDelta;
+                page.recvDelta = 0;
+            }
+            cout << "type=" << type << " amend_delta_sum=" << delta_sum << endl;
+        }
+
     }
 
     int run(){
@@ -138,13 +165,25 @@ public:
     static int computer_num;
 };
 
+void copy_data(DeltaPageRank &d1, DeltaPageRank &d2, int vertex_num){
+    Page* pages = d1.pages;
+    Page* inc_pages = d2.pages;
+    for(int i = 0; i < vertex_num; i++){
+        int x = d1.vertex_reverse_map[i]; // 真实id(x): i -> x
+        int y = d2.vertex_map[x]; // 真实id(x): x -> y(新id)  
+        inc_pages[y].value = pages[i].value;
+        inc_pages[y].oldDelta = pages[i].oldDelta;
+        inc_pages[y].recvDelta = pages[i].recvDelta;
+    }
+}
+
 int DeltaPageRank::computer_num = 0;
 
 int main(int argc, char const *argv[])
 {
     // 运行命令: ./a.out 0.0000001 ./input/p2p-31_new.e p2p-31
     // ./a.out $CONVERGENCE_THRESHOLD ${base_e} ${com_base_v} ${updated_e} ${com_updated_v}
-    if (argc != 6) {
+    if (argc < 4) {
         printf("incorrect arguments.\n");
         printf("$CONVERGENCE_THRESHOLD ${base_e} ${com_base_v} ${updated_e} ${com_updated_v}\n");
         abort();
@@ -155,6 +194,8 @@ int main(int argc, char const *argv[])
     string com_base_v(argv[3]);
     string updated_e(argv[4]);
     string com_updated_v(argv[5]);
+    string outPath = "./out/pr_delta_pre.txt";
+
     // 初始化计时器 
     timer_start(true);
 
@@ -165,7 +206,27 @@ int main(int argc, char const *argv[])
     timer_next("compute_graph");
     deltaPageRank.run();
     timer_next("write_result");
-    deltaPageRank.write_result();
+    deltaPageRank.write_result(outPath);
+
+    // 增量计算
+    DeltaPageRank deltaPageRank_inc = DeltaPageRank();
+    timer_next("inc_load_data");
+    deltaPageRank_inc.load_data(updated_e, com_updated_v);
+
+    timer_next("update_graph_data");
+    // 新图旧图的切换
+    // 回收
+    deltaPageRank.amend(-1);
+    // 切换数据
+    copy_data(deltaPageRank, deltaPageRank_inc, deltaPageRank.vertex_num);
+    // 补发
+    deltaPageRank_inc.amend(1);
+
+    timer_next("inc_compute");
+    deltaPageRank_inc.run();
+    timer_next("write_result");
+    deltaPageRank_inc.write_result(outPath);
+
 
     timer_end(true, "-nor_graph");
     return 0;
