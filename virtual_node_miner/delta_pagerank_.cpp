@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <ctime>
 #include "utils/timer.h"
+#include <math.h>
 
 using namespace std;
 
@@ -91,7 +92,8 @@ public:
                 int outDegree = page.outPage.size();
                 // double tmpDelta = page.oldDelta / outDegree * d * type; // type: -1 or 1
                 double tmpDelta = page.value / outDegree * d * type; // type: -1 or 1
-                if(tmpDelta <= threshold){
+                delta_sum += std::fabs(tmpDelta);
+                if(std::fabs(tmpDelta) <= threshold){
                     continue;
                 }
                 for(auto p : page.outPage){
@@ -99,14 +101,14 @@ public:
                 }
             }
 
-            for(int i = 0; i < vertex_num; i++){
-                Page& page = pages[i];
-                page.value += page.recvDelta;
-                delta_sum += std::abs(page.recvDelta);
-                page.oldDelta = page.recvDelta;
-                page.recvDelta = 0;
-            }
-            cout << "type=" << type << " amend_delta_sum=" << delta_sum << endl;
+            // for(int i = 0; i < vertex_num; i++){
+            //     Page& page = pages[i];
+            //     page.value += page.recvDelta;
+            //     delta_sum += std::fabs(page.recvDelta);
+            //     page.oldDelta = page.recvDelta;
+            //     page.recvDelta = 0;
+            // }
+            cout << "---type=" << type << " amend_delta_sum=" << delta_sum << endl;
         }
 
     }
@@ -116,33 +118,36 @@ public:
         float delta_sum = 0;
         // 开始迭代
         computer_num++;
-        while(1)
+        // while(1)
+        while(step < 200)
         {
             delta_sum = 0;
+            step++;
+            // send
             for(int i = 0; i < vertex_num; i++){
                 Page& page = pages[i];
                 int outDegree = page.outPage.size();
                 double tmpDelta = page.oldDelta / outDegree * d;
-                if(tmpDelta <= threshold){
+                // if(tmpDelta <= threshold){
+                if(std::fabs(tmpDelta) <= threshold){
                     continue;
                 }
                 for(auto p : page.outPage){
                     pages[p].recvDelta += tmpDelta;
                 }
             }
-
+            // receive
             for(int i = 0; i < vertex_num; i++){
                 Page& page = pages[i];
                 page.value += page.recvDelta;
-                delta_sum += page.recvDelta;
+                delta_sum += std::fabs(page.recvDelta); // 负的累加在一起会抵消，导致提前小于阈值
                 page.oldDelta = page.recvDelta;
                 page.recvDelta = 0;
             }
-            step++;
-            // cout << "step=" << step << ", receive_delta_sum_r=" << delta_sum << << endl;
-            if(delta_sum < threshold){
+            if(delta_sum < threshold){ // delta_sum 可能为负？？？
                 break;
             }
+            // cout << "step=" << step << ", receive_delta_sum_r=" << delta_sum << << endl;
         }
 
         cout << "step=" << step << ", normal graph convergence" << ", delta_sum=" << delta_sum << endl;
@@ -194,7 +199,8 @@ int main(int argc, char const *argv[])
     string com_base_v(argv[3]);
     string updated_e(argv[4]);
     string com_updated_v(argv[5]);
-    string outPath = "./out/pr_delta_pre.txt";
+    string outPath1 = "./out/pr_delta_pre_1.txt";
+    string outPath2 = "./out/pr_delta_pre.txt";
 
     // 初始化计时器 
     timer_start(true);
@@ -206,7 +212,7 @@ int main(int argc, char const *argv[])
     timer_next("compute_graph");
     deltaPageRank.run();
     timer_next("write_result");
-    deltaPageRank.write_result(outPath);
+    deltaPageRank.write_result(outPath1);
 
     // 增量计算
     DeltaPageRank deltaPageRank_inc = DeltaPageRank();
@@ -219,13 +225,14 @@ int main(int argc, char const *argv[])
     deltaPageRank.amend(-1);
     // 切换数据
     copy_data(deltaPageRank, deltaPageRank_inc, deltaPageRank.vertex_num);
+    // deltaPageRank_inc.write_result("./out/pr_delta_pre_test.txt"); //测试
     // 补发
     deltaPageRank_inc.amend(1);
 
     timer_next("inc_compute");
     deltaPageRank_inc.run();
     timer_next("write_result");
-    deltaPageRank_inc.write_result(outPath);
+    deltaPageRank_inc.write_result(outPath2);
 
 
     timer_end(true, "-nor_graph");
