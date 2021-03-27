@@ -8,13 +8,16 @@ if __name__ == "__main__":
     path1 = r"././out/pr_delta_pre.txt"
     df1 = pd.read_csv(path1, header=None, sep=' ')
     df1 = df1.sort_values(by=0, ascending=True)  # 按age排列, ascending=False表示降序，为True为升序，默认为True
+    df1.to_csv(path1, index=None, columns=None, header=False, sep=' ') # 重新保存文件
     print(df1.head())
     # print(df1.tail())
     print(df1.shape)
 
     path2 = r"././out/pr_delta_sum_com.txt"
+    # path2 = r"././out/pr_delta_pre_1.txt"
     df2 = pd.read_csv(path2, header=None, sep=' ')
     df2 = df2.sort_values(by=0, ascending=True)  # 按age排列, ascending=False表示降序，为True为升序，默认为True
+    df2.to_csv(path2, index=None, columns=None, header=False, sep=' ')  # 重新保存文件
     print(df2.head())
     # print(df2.tail())
     print(df2.shape)
