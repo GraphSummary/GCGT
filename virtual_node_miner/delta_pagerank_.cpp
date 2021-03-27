@@ -118,8 +118,7 @@ public:
         float delta_sum = 0;
         // 开始迭代
         computer_num++;
-        // while(1)
-        while(step < 200)
+        while(1)
         {
             delta_sum = 0;
             step++;

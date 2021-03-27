@@ -35,21 +35,7 @@ struct Page
     //     cout << "\n-------------------" << endl;
     // }
 };
-// 用于普通图的节点
-struct Page_de
-{
-    // unordered_set<int> outPage; //出邻居, 可能有重复的边
-    vector<int> outPage; //出邻居, 不能有重复的边
-    double value = 0;
-    double oldDelta= 0;
-    double recvDelta = 1-d;
-    Page_de(){}
-    Page_de(double value_, double oldDelta_, double recvDelta_){
-        value = value_;
-        oldDelta = oldDelta;
-        recvDelta = recvDelta_;
-    }
-};
+
 class DeltaPageRankSum{
 public:
     DeltaPageRankSum(){}
@@ -98,7 +84,7 @@ public:
         data = linkvec;
     }
     //把每个页面的信息（outPage，value，oldDelta，recvDelta）存到向量里
-    void getPagesVec(string compress_edge_path){
+    void getPagesVec(const std::string &compress_edge_path){
         ifstream inFile(compress_edge_path);
         if(!inFile){
             cout << "open file failed. " << compress_edge_path << endl;
@@ -129,7 +115,7 @@ public:
     }
 
     // 读取所有点（包括虚拟点）
-    void read_nodes(string compress_vertex_path) {
+    void read_nodes(const std::string &compress_vertex_path) {
         ifstream inFile(compress_vertex_path);
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
@@ -164,8 +150,7 @@ public:
         inFile.close();
     }
 
-    void wirte_result(){
-        string outPath_compress = "./out/pr_delta_sum_com.txt";  // 保存结果
+    void write_result(const std::string &outPath_compress){
         cout << "\nout path: " << outPath_compress << endl;
         ofstream fout_com(outPath_compress);
         for(int i = 0; i < vertex_num; i++){
@@ -177,15 +162,69 @@ public:
         fout_com.close();
     }
 
-    void load_data(string edge_new_path_, string filename){
-        string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶点的对应关系
-        string e_path = "./out/" + filename + ".e"; // 压缩图边文件，超点之间的边
-        read_nodes(v_path);
-        getPagesVec(e_path);
+    void load_data(const std::string &com_e, const std::string &com_v){
+        // com_base_e, com_base_v
+        // string v_path = "./out/" + filename + ".v"; // 压缩图点文件，包含超点和源顶点的对应关系
+        // string e_path = "./out/" + filename + ".e"; // 压缩图边文件，超点之间的边
+        read_nodes(com_v);
+        getPagesVec(com_e);
         if(virtual_node_start == -1){
             virtual_node_start = vertex_num;
         }
         cout << "vertex_num=" << vertex_num << ", virtual_node_start=" << virtual_node_start << endl;
+    }
+
+    // 在旧的图上进回收: 迭代一次负消息
+    // 在新的图上进补收: 迭代一次正消息
+    void amend(int type){
+        {
+            double delta_sum = 0;
+            double delta_sum_v = 0;
+            // real node send
+            for(int i = 0; i < virtual_node_start; i++){
+                Page& page = pages[i];
+                int outDegree = page.outAdjNum;
+                // double tmpDelta = page.oldDelta / outDegree * d * type; // - or +
+                double tmpDelta = page.value / outDegree * d * type; // - or +
+                delta_sum += std::fabs(tmpDelta);
+                if(std::fabs(tmpDelta) <= threshold){
+                    continue;
+                }
+                for(auto p : page.outPage){
+                    pages[p].recvDelta += tmpDelta * pages[p].weight;
+                }
+            }
+            // virtual node receivel
+            for(int i = virtual_node_start; i < vertex_num; i++){
+                Page& page = pages[i];
+                // delta_sum += page.recvDelta;
+                // page.value += page.recvDelta;
+                page.oldDelta = page.recvDelta;  // 必须更新
+                page.recvDelta = 0;
+            }
+            // virtual node send
+            for(int i = virtual_node_start; i < vertex_num; i++){
+                Page& page = pages[i];
+                int outDegree = page.outAdjNum;
+                double tmpDelta = page.oldDelta / outDegree; // virtual_node 只作转发，故不需要 * type
+                delta_sum_v += std::fabs(tmpDelta);
+                if(std::fabs(tmpDelta) <= threshold){
+                    continue;
+                }
+                for(auto p : page.outPage){
+                    pages[p].recvDelta += tmpDelta * pages[p].weight;
+                }
+            }
+            // real node receive
+            // for(int i = 0; i < virtual_node_start; i++){
+            //     Page& page = pages[i];
+            //     delta_sum += std::abs(page.recvDelta);
+            //     page.value += page.recvDelta;
+            //     page.oldDelta = page.recvDelta;  // 必须更新
+            //     page.recvDelta = 0;
+            // }
+            cout << "type=" << type << " amend_delta_sum=" << delta_sum <<  " delta_sum_v=" << delta_sum_v << endl;
+        }
     }
 
     int run(){  
@@ -196,18 +235,18 @@ public:
         int increment_num = 1;
         float delta_sum = 0;
         cout << "开始计算..." << endl;
+        computer_num++;
         while(1)
         {
-            int shouldStop = 0; //根据oldPR与newPR的差值 判断是否停止迭代
             delta_sum = 0;
-
+            step++;
             // real node send
             for(int i = 0; i < virtual_node_start; i++){
                 Page& page = pages[i];
                 int outDegree = page.outAdjNum;
                 double tmpDelta = page.oldDelta / outDegree * d;
                 // tmpDelta *= (page.weight == 1 ? d : 1); // 真实点应该是1，虚拟点则全部发送出去
-                if(tmpDelta <= threshold){
+                if(std::fabs(tmpDelta) <= threshold){
                     continue;
                 }
                 for(auto p : page.outPage){
@@ -227,7 +266,7 @@ public:
                 Page& page = pages[i];
                 int outDegree = page.outAdjNum;
                 double tmpDelta = page.oldDelta / outDegree;
-                if(tmpDelta <= threshold){
+                if(std::fabs(tmpDelta) <= threshold){
                     continue;
                 }
                 for(auto p : page.outPage){
@@ -237,19 +276,19 @@ public:
             // real node receive
             for(int i = 0; i < virtual_node_start; i++){
                 Page& page = pages[i];
-                delta_sum += page.recvDelta;
+                // delta_sum += page.recvDelta;
+                delta_sum += std::fabs(page.recvDelta);
                 page.value += page.recvDelta;
                 page.oldDelta = page.recvDelta;  // 必须更新
                 page.recvDelta = 0;
             }
-            step++;
-            // cout << "step=" << step << ", delta_sum=" << delta_sum << endl;
             if(delta_sum < threshold){
                 break;
             }
+            // cout << "step=" << step << ", delta_sum=" << delta_sum << endl;
         }
         cout << "step=" << step << ", Compressed graph convergence" << ", delta_sum=" << delta_sum << endl;
-        fout_1 << "compress_graph_1st_step:" << step << endl;
+        fout_1 << "compress_graph_" << computer_num << "_step:" << step << endl;
         fout_1.close();
     }
     // ~DeltaPageRankSum(){
@@ -262,30 +301,68 @@ public:
     unordered_map<int, int> vertex_reverse_map; // 新id: 原id
     int virtual_node_start=VIRTUAL_NODE_START; // 虚拟点的第一个id
     int vertex_num = 0; // 所有点的个数
+    static int computer_num;
 };
+
+void copy_data(DeltaPageRankSum &d1, DeltaPageRankSum &d2, int vertex_num){
+    Page* pages = d1.pages;
+    Page* inc_pages = d2.pages;
+    for(int i = 0; i < vertex_num; i++){
+        if(pages[i].weight == 1){ // 只写入真实点
+            int x = d1.vertex_reverse_map[i]; // 真实id(x): i -> x
+            int y = d2.vertex_map[x]; // 真实id(x): x -> y(新id)  
+            inc_pages[y].value = pages[i].value;
+            inc_pages[y].oldDelta = pages[i].oldDelta;
+            inc_pages[y].recvDelta = pages[i].recvDelta;
+        }
+    }
+}
+
+//初始化静态成员变量
+int DeltaPageRankSum::computer_num = 0;
 
 int main(int argc, char const *argv[])
 {   
     // 运行命令: ./a.out 0.0000001 ./input/p2p-31_new.e p2p-31
+    // 提取参数： $CONVERGENCE_THRESHOLD ${com_base_e} ${com_base_v} ${com_updated_e} ${com_updated_v}
+    threshold = atof(argv[1]);
+    string com_base_e(argv[2]);     // 原图压缩文件
+    string com_base_v(argv[3]);
+    string com_updated_e(argv[4]);  // 新图压缩文件
+    string com_updated_v(argv[5]);
+    string outPath_compress_1 = "./out/pr_delta_sum_com_1.txt";  // 保存结果
+    string outPath_compress_2 = "./out/pr_delta_sum_com.txt";  // 保存结果
+
     // 初始化计时器 
     timer_start(true);
-    threshold = atof(argv[1]);
-    string edge_new_path(argv[2]);
-    string filename(argv[3]);
-
     // 原图计算
     DeltaPageRankSum deltaPageRankSum = DeltaPageRankSum();
     timer_next("load data");
-    deltaPageRankSum.load_data(edge_new_path, filename);
+    deltaPageRankSum.load_data(com_base_e, com_base_v);
     timer_next("compute");
     deltaPageRankSum.run();
-    // timer_next("write result");
-    // deltaPageRankSum.wirte_result();
- 
+    timer_next("write result");
+    deltaPageRankSum.write_result(outPath_compress_1);
+
     // 增量计算
+    DeltaPageRankSum deltaPageRankSum_inc = DeltaPageRankSum();
+    timer_next("inc_load_data");
+    deltaPageRankSum_inc.load_data(com_updated_e, com_updated_v);
 
+    timer_next("update_graph_data");
+    // 新图旧图的切换
+    // 回收
+    deltaPageRankSum.amend(-1);
+    // 切换数据
+    copy_data(deltaPageRankSum, deltaPageRankSum_inc, deltaPageRankSum.vertex_num);
+    // 补发
+    deltaPageRankSum_inc.amend(1);
 
-
+    timer_next("inc_compute");
+    deltaPageRankSum_inc.run();
+    timer_next("write_result");
+    deltaPageRankSum_inc.write_result(outPath_compress_2);
+ 
     timer_end(true, "-com_graph");
     return 0;
 }

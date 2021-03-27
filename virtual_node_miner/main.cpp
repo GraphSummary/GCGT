@@ -10,16 +10,19 @@
 int main(int argc,char *argv[]) {
     timer_start(true);
     auto start_com = clock();
-    if (argc != 6) {
+    if (argc != 9) {
         printf("incorrect arguments.\n");
-        printf("<input_graph> <output_graph_edge> <output_graph_vertex> <CLUSTER_THRESHOLD> <VIRTUAL_THRESHOLD>\n");
+        printf("${base_e} ${update_e} ${com_base_e} ${com_base_v} ${com_updated_e} ${com_updated_v} $CLUSTER_THRESHOLD $VIRTUAL_THRESHOLD\n");
         abort();
     }
-    std::string input_path(argv[1]);
-    std::string output_path_e(argv[2]);
-    std::string output_path_v(argv[3]);
-    int CLUSTER_THRESHOLD = atoi(argv[4]);
-    int VIRTUAL_THRESHOLD = atoi(argv[5]);
+    std::string base_e(argv[1]);
+    std::string update_e(argv[2]);
+    std::string com_base_e(argv[3]);
+    std::string com_base_v(argv[4]);
+    std::string com_updated_e(argv[5]);
+    std::string com_updated_v(argv[6]);
+    int CLUSTER_THRESHOLD = atoi(argv[7]);
+    int VIRTUAL_THRESHOLD = atoi(argv[8]);
 
     const rlim_t kStackSize = 1 * 1024 * 1024 * 1024;
     struct rlimit rl;
@@ -40,17 +43,27 @@ int main(int argc,char *argv[]) {
     }
 
     virtual_node_miner vnminer(CLUSTER_THRESHOLD, VIRTUAL_THRESHOLD);
-    // double _time = clock();
+    // 原图压缩
     timer_next("load_graph");
-    vnminer.load_graph(input_path);
-    timer_next("compress_graph");
+    vnminer.load_graph(base_e);
+    timer_next("compress_base");
     vnminer.compress(5);
-    timer_next("write_graph");
-    vnminer.write_graph(output_path_e); // write edge file
-    timer_next("write_vertex");
+    timer_next("write_com_base_e");
+    vnminer.write_graph(com_base_e); // write edge file
+    timer_next("write_com_base_v");
     vnminer.computeX(); // compute x[v] v in V, The number of real nodes that can be reached from v using virtual edges
     vnminer.computeY(); // y[v]: v's real outadjsum.
-    vnminer.write_vertex(output_path_v); // 
+    vnminer.write_vertex(com_base_v); // 
+
+    // 增量压缩
+    timer_next("increment_compress");
+    vnminer.increment_compress(update_e);
+    timer_next("write_com_updated_e");
+    vnminer.write_graph(com_updated_e); // write edge file
+    timer_next("write_com_updated_v");
+    vnminer.computeX(); // compute x[v] v in V, The number of real nodes that can be reached from v using virtual edges
+    vnminer.computeY(); // y[v]: v's real outadjsum.
+    vnminer.write_vertex(com_updated_v); // 
 
     timer_end(true, "-compress");
 
