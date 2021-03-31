@@ -36,7 +36,7 @@ public:
 
         if (f == 0) {
             std::cout << "file cannot open! " << file_path << std::endl;
-            return false;
+            exit(0);
         }
 
         std::vector<std::pair<int, int>> edges;
@@ -83,12 +83,12 @@ public:
         return true;
     }
 
-    void run(const std::string &edge_path, const float rate){
+    void run(const std::string &edge_path, const float rate, const std::string rate_string){
         // web-uk-2002-all_base.e
         int pos = edge_path.find_last_of("b"); // 找到第一个空格的位置
         std::string base_path = edge_path.substr(0, pos);
-        std::string updated_path = base_path + "updated.e";
-        std::string update_path = base_path + "update.e";
+        std::string updated_path = base_path + "updated_" + rate_string + ".e";
+        std::string update_path = base_path + "update_" + rate_string + ".e";
         FILE *f_updated = fopen(updated_path.c_str(), "w");
         FILE *f_update = fopen(update_path.c_str(), "w");
         if (f_updated == nullptr) {
@@ -165,13 +165,16 @@ public:
 
 int main(int argc, char const *argv[])
 {
-    // ./a.out /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all_base.e 0.01
+    // input:  ./a.out /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all_base.e 0.01
+    // output: /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all_update_0.001.e
+    //         /home/yusong/dataset/web-uk-2002-all/web-uk-2002-all_updated_0.001.e
     timer_start(true);
     std::string edge_path = argv[1];
+    std::string rate_string = argv[2];
     float rate = atof(argv[2]);
 
     Delete_add_edge deal = Delete_add_edge();
-    deal.run(edge_path, rate);
+    deal.run(edge_path, rate, rate_string);
 
     timer_end(false, "-del_add_edge");
 
