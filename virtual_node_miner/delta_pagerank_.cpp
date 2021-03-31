@@ -29,6 +29,7 @@ public:
         ifstream inFile(file);
         if(!inFile){
             cout << "open file failed. " << file << endl;
+            exit(0);
         }
         cout << "finish read file..." << file << endl;
         int u, v;
@@ -58,6 +59,7 @@ public:
         ifstream inFile(compress_vertex_path);
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
+            exit(0);
         }
         cout << "finish read file..." << compress_vertex_path << endl;
         int nodes_numble, _raw_num_node;
@@ -69,7 +71,6 @@ public:
 
     void write_result(const std::string &outPath){
         cout << "out path: " << outPath << endl;
-        timer_next("write_graph");
         ofstream fout(outPath);
         for(int i = 0; i < vertex_num; i++){
             Page& page = pages[i];
@@ -210,8 +211,8 @@ int main(int argc, char const *argv[])
     deltaPageRank.load_data(base_e, com_base_v);
     timer_next("compute_graph");
     deltaPageRank.run();
-    timer_next("write_result");
-    deltaPageRank.write_result(outPath1);
+    // timer_next("write_result");
+    // deltaPageRank.write_result(outPath1);
 
     // 增量计算
     DeltaPageRank deltaPageRank_inc = DeltaPageRank();

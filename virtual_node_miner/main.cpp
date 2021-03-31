@@ -65,6 +65,12 @@ int main(int argc,char *argv[]) {
     vnminer.computeY(); // y[v]: v's real outadjsum.
     vnminer.write_vertex(com_updated_v); // 
 
+    // 测试
+    std::cout << "==============" << std::endl;
+    timer_next("decompress");
+    vnminer.decompress(); // 解压，用于测试压缩是否正确
+    vnminer.write_de_graph("./out/de_edge.e"); // write edge file
+
     timer_end(true, "-compress");
 
     return 0;

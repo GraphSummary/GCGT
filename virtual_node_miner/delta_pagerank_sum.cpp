@@ -88,6 +88,7 @@ public:
         ifstream inFile(compress_edge_path);
         if(!inFile){
             cout << "open file failed. " << compress_edge_path << endl;
+            exit(0);
         }
         cout << "finish read file..." << compress_edge_path << endl;
         int u, v;
@@ -119,6 +120,7 @@ public:
         ifstream inFile(compress_vertex_path);
         if(!inFile){
             cout << "open file failed. " << compress_vertex_path << endl;
+            exit(0);
         }
         cout << "finish read file..." << compress_vertex_path << endl;
         int all_nodes_numble, real_nodes_numble;
@@ -341,8 +343,8 @@ int main(int argc, char const *argv[])
     deltaPageRankSum.load_data(com_base_e, com_base_v);
     timer_next("compute");
     deltaPageRankSum.run();
-    timer_next("write result");
-    deltaPageRankSum.write_result(outPath_compress_1);
+    // timer_next("write result");
+    // deltaPageRankSum.write_result(outPath_compress_1);
 
     // 增量计算
     DeltaPageRankSum deltaPageRankSum_inc = DeltaPageRankSum();
