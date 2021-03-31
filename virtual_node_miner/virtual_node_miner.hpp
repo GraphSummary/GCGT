@@ -206,7 +206,7 @@ public:
             std::cout << "file cannot open! " << file_path << std::endl;
             return false;
         }
-
+        std::cout << "load: " << file_path << std::endl;
         std::vector<std::pair<int, int>> edges;
 
         int u = 0;
@@ -432,7 +432,7 @@ public:
         // pass_num = 1; // 图的压缩次数，如果压缩多次会产生压缩点指向压缩点的情况。多次压缩的化，需要最和合并虚拟点
         for (int pass = 0; pass < pass_num; pass++) {
             double start_com = clock();
-            timer_next("compress time=");
+            timer_next("compress time_" + std::to_string(pass));
             one_pass();
             refresh_num_edge();
             std::cout << "compress time=" << (clock() - start_com)/ CLOCKS_PER_SEC << std::endl;
@@ -451,12 +451,12 @@ public:
         }
         std::string file_path = "./out/result.txt";
         FILE *fp = fopen(file_path.c_str(), "a+");
-        fprintf(fp, "oldnode:%d\n", int(_raw_num_node));
-        fprintf(fp, "oldedge:%d\n", int(_raw_num_edge));
-        fprintf(fp, "nownode:%d\n", int(_num_node));
-        fprintf(fp, "nowedge:%d\n", int(_num_edge));
-        fprintf(fp, "edge rate:%f\n", float(int(_num_node)) / int(_raw_num_node));
-        fprintf(fp, "node rate:%f\n", float(int(_num_edge)) / int(_raw_num_edge));
+        fprintf(fp, "nor_node:%d\n", int(_raw_num_node));
+        fprintf(fp, "nor_edge:%d\n", int(_raw_num_edge));
+        fprintf(fp, "com_node:%d\n", int(_num_node));
+        fprintf(fp, "com_edge:%d\n", int(_num_edge));
+        fprintf(fp, "edge compression rate:%f\n", float(int(_num_node)) / int(_raw_num_node));
+        fprintf(fp, "node compression rate:%f\n", float(int(_num_edge)) / int(_raw_num_edge));
         fclose(fp);
     }
 
@@ -483,7 +483,7 @@ public:
         // 数据边加载边处理：
         while (fscanf(f, "%c %d %d\n", &type, &u, &v) > 0) {
             line_cnt++;
-            std::cout << "load_update: " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
+            // std::cout << "load_update: " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
             assert(u >= 0);
             assert(v >= 0);
             if(type == 'd'){
@@ -493,9 +493,12 @@ public:
                     // std::cout << "v在虚拟点中 " << std::endl;
                     std::vector<int>::iterator t;
                     for(auto i : _adjlists[u]){
-                        t =find(_adjlists[i].begin(), _adjlists[i].end(), v);
+                        if(i < _raw_num_node){ // 必须在虚拟邻居中查找，否则直接跳过
+                            continue;
+                        }
+                        t = find(_adjlists[i].begin(), _adjlists[i].end(), v);
                         if(t != _adjlists[i].end()){
-                            // 删除： u->i
+                            // delete： u->i
                             // std::cout << "v在虚拟点中 i=" << i << ",u=" << u << std::endl;
                             remove_adj(_adjlists[u], i);
                             remove_adj(_adjlists_in[i], u);
@@ -507,7 +510,7 @@ public:
                                 // std::cout << "v在虚拟点中 " << j << std::endl;
                                 _adjlists[u].emplace_back(j);
                                 _adjlists_in[j].emplace_back(u);
-                            }                          
+                            }  
                             _active_node_r.insert(u); 
                             // _active_node_v.add(v); 
                             _active_node_v.insert(i); // i可能会被清理掉，因为save降低了
@@ -517,7 +520,7 @@ public:
                 }
                 else{
                     // u和v直接相连
-                    std::cout << "u和v直接相连 " << std::endl;
+                    // std::cout << "u和v直接相连 " << std::endl;
                     std::swap(*iter, _adjlists[u].back());
                     _adjlists[u].pop_back();
                     remove_adj(_adjlists_in[v], u);
@@ -544,6 +547,7 @@ public:
     }
 
     void increment_compress(const std::string &file_path){
+        std::cout << "_raw_num_node=" << _raw_num_node << std::endl;
         // 得到入邻居
         _adjlists_in.clear();
         _adjlists_in.resize(_num_node);
@@ -557,7 +561,7 @@ public:
         // 清理无用的虚拟节点：_active_node_v
 
         // 将受影响的点重新聚类: _active_node_r
-         
+        
 
 
     }
@@ -619,14 +623,15 @@ public:
             return false;
         }
 
-        // node file first line is number of nodes.
+        // node file first line: number of nodes and number of virtual nodes.
         // update num
         int _raw_num_node_new = 0;
         int _num_node_new = 0;
         for(int i = 0; i < _raw_num_node; i++){
             if(_adjlists[i].size() > 0) _raw_num_node_new++;
         }
-        for(int i = 0; i < _num_node; i++){
+        _num_node_new = _raw_num_node_new;
+        for(int i = _raw_num_node; i < _num_node; i++){
             if(_adjlists[i].size() > 0) _num_node_new++;
         }
         fprintf(fp, "%d %d\n", int(_num_node_new), int(_raw_num_node_new));
@@ -639,6 +644,51 @@ public:
 
         return true;
     }
+
+    bool write_de_graph(const std::string &file_path) {
+        FILE *fp = fopen(file_path.c_str(), "w");
+
+        if (fp == nullptr) {
+            std::cout << "graph file cannot create!" << file_path << std::endl;
+            return false;
+        }
+
+        for (int i = 0; i < _raw_num_node; i++) {
+            // Virtual points without in-degree, need to be cleared
+            if(i >= _raw_num_node && _adjlists_in.size() > 0 && _adjlists_in[i].size() < 1){
+                continue;
+            }
+            for (int j = 0; j < _adjlists[i].size(); j++) {
+                fprintf(fp, "%d %d\n", i, _adjlists[i][j]);
+            }
+        }
+        fclose(fp);
+
+        return true;
+    }
+
+    // 解压：将图更改为为压缩时的结构
+    void decompress(){
+        // 需要保证，_adjlists_in已经初始化赋值了
+        std::cout << "_raw_num_node=" << _raw_num_node << std::endl;
+        for(int i = _raw_num_node; i < _num_node; i++){ // i is a virtual node
+            if(_adjlists[i].size() > 0){
+                for(auto j : _adjlists_in[i]){ 
+                    std::vector<int> &u_adjlist = _adjlists[j];
+                    std::vector<int>::iterator it = find(u_adjlist.begin(), u_adjlist.end(), i);
+                    std::swap(*it, u_adjlist.back());
+                    u_adjlist.pop_back();
+                    // u_adjlist.insert(u_adjlist.end(), _adjlists[i].begin(), _adjlists[i].end());
+                    for(auto q : _adjlists[i]){
+                        u_adjlist.push_back(q);
+                    }
+                }
+
+            }
+        }
+        std::cout << std::endl;
+    }
+
 };
 
 
