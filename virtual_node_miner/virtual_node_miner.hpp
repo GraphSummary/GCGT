@@ -147,6 +147,15 @@ class virtual_node_miner {
         int u_id;
         std::vector<int> v_list;
     };
+    struct chage_edge {
+        char type;
+        int u, v;
+        chage_edge(char t, int u_, int v_){
+            type = t;
+            u = u_;
+            v = v_;
+        }
+    };
 
     std::vector<adjlist> _adjlists;
     size_t _num_node;
@@ -164,6 +173,9 @@ class virtual_node_miner {
     std::vector<adjlist> _adjlists_in; // 记录入邻居
     std::unordered_set<int> _active_node_r; // 受影响的真实点
     std::unordered_set<int> _active_node_v; // 受影响的虚拟点
+    std::vector<std::pair<int, int>> add_edges; // add edges
+    // std::vector<bool> is_sort; // 标记该点的出度是否排序
+    std::unordered_set<int> sorted_nodes; // 标记该点的出度是否排序
 
 
 public:
@@ -476,16 +488,40 @@ public:
             std::cout << "file cannot open! " << file_path << std::endl;
             return false;
         }
+        int line_cnt = 0;
+        // load update edge：
+        std::cout << "load: " << file_path << std::endl;
+        std::vector<chage_edge> edges;
         int u = 0;
         int v = 0;
         char type;
-        int line_cnt = 0;
-        // 数据边加载边处理：
+        timer_next("load_inc_data");
         while (fscanf(f, "%c %d %d\n", &type, &u, &v) > 0) {
             line_cnt++;
-            // std::cout << "load_update: " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
             assert(u >= 0);
             assert(v >= 0);
+            if(type == 'd' || type == 'a'){
+                edges.emplace_back(chage_edge(type, u, v));
+                if(type == 'a'){
+                    add_edges.emplace_back(std::pair<int, int>(u, v));
+                }
+            }
+            else{
+                std::cout << "load_update error! " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
+                exit(0);
+            }
+        }
+        fclose(f);
+        std::cout << "update_edge_cnt=" << line_cnt << std::endl;
+
+        // while (fscanf(f, "%c %d %d\n", &type, &u, &v) > 0) {
+            // line_cnt++;
+        timer_next("increment_compress_1");
+        for(auto edge : edges){
+            type = edge.type;
+            u = edge.u;
+            v = edge.v;
+            // std::cout << "load_update: " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
             if(type == 'd'){
                 std::vector<int>::iterator iter=find(_adjlists[u].begin(), _adjlists[u].end(), v);
                 if(iter == _adjlists[u].end()){ 
@@ -501,7 +537,7 @@ public:
                             // delete： u->i
                             // std::cout << "v在虚拟点中 i=" << i << ",u=" << u << std::endl;
                             remove_adj(_adjlists[u], i);
-                            remove_adj(_adjlists_in[i], u);
+                            // remove_adj(_adjlists_in[i], u);
                             // 将其余边添加到 u_adj
                             for(auto j : _adjlists[i]){
                                 if(j == v){
@@ -509,7 +545,7 @@ public:
                                 }
                                 // std::cout << "v在虚拟点中 " << j << std::endl;
                                 _adjlists[u].emplace_back(j);
-                                _adjlists_in[j].emplace_back(u);
+                                // _adjlists_in[j].emplace_back(u);
                             }  
                             _active_node_r.insert(u); 
                             // _active_node_v.add(v); 
@@ -523,46 +559,210 @@ public:
                     // std::cout << "u和v直接相连 " << std::endl;
                     std::swap(*iter, _adjlists[u].back());
                     _adjlists[u].pop_back();
-                    remove_adj(_adjlists_in[v], u);
+                    // remove_adj(_adjlists_in[v], u);
                 }
             }
             else if (type == 'a'){
                 _adjlists[u].emplace_back(v);
-                _adjlists_in[v].emplace_back(u);
-                _active_node_r.insert(u); 
+                // _adjlists_in[v].emplace_back(u);
+                // _active_node_r.insert(u); 
+                _active_node_r.insert(v); 
                 // 找和u相似的虚拟点，尝试u和其合并
                 // 利用MinHash来找
-
             }
             else{
                 std::cout << "load_update error! " <<  "f=" << type << ",u=" << u << ",v=" << v << std::endl;
                 exit(0);
             }
         }
-        fclose(f);
-        std::cout << "line_cnt=" << line_cnt << std::endl;
-        // std::sort(edges.begin(), edges.end());
 
         return true;
     }
 
+    bool try_merge(int u, int vn){
+        std::vector<int> &u_adjlist = _adjlists[u];
+        std::vector<int> &vn_adjlist = _adjlists[vn];
+        if(u_adjlist.size() < vn_adjlist.size()){
+            return false;
+        }
+        if(sorted_nodes.find(u) == sorted_nodes.end()){
+            std::sort(u_adjlist.begin(), u_adjlist.end());
+            sorted_nodes.insert(u);
+        }
+        if(sorted_nodes.find(vn) == sorted_nodes.end()){
+            std::sort(vn_adjlist.begin(), vn_adjlist.end());
+            sorted_nodes.insert(vn);
+        }
+        // vn is subset of u:
+        int cnt_u = 0, cnt_vn = 0;
+        // u: 1,1,1,3, vn: 3, 4
+        while(cnt_u < u_adjlist.size() && cnt_vn < vn_adjlist.size()){
+            if(u_adjlist[cnt_u] < vn_adjlist[cnt_vn]){
+                cnt_u++;
+            }
+            else if(u_adjlist[cnt_u] == vn_adjlist[cnt_vn]){
+                cnt_vn++;
+                cnt_u++;
+            }
+            else{
+                return false;
+            }
+        }
+        if(cnt_vn < vn_adjlist.size()){
+            return false;
+        }
+        std::vector<int> new_adjlist;
+        for (auto v : _adjlists[u]) {
+            auto first = std::lower_bound(vn_adjlist.begin(), vn_adjlist.end(), v);
+            if(!(first == vn_adjlist.end()) && (*first == v)){
+                continue;
+            }
+            new_adjlist.emplace_back(v);
+        }
+        new_adjlist.emplace_back(vn);
+        std::sort(new_adjlist.begin(), new_adjlist.end());
+        _adjlists[u] = new_adjlist;
+        _adjlists_in[vn].emplace_back(u); // 这里更新了加入的，并没有删除原来u的出度点的_adjlists_in中u
+        return true;
+    }
+
+// /*
+    void one_pass_by_active(std::unordered_set<int> &_active_node_r_hop2) {
+        reset_hash_function();
+
+        // generate min-hash matrix
+        _hash_mat.clear();
+        // _hash_mat.resize(_num_node);
+        _hash_mat.resize(_raw_num_node);
+
+// #pragma omp parallel for
+        // for (int i = 0; i < _num_node; i++) {
+        // for (int i = 0; i < _raw_num_node; i++) {
+        int update_node_num = 0;
+        for(auto i : _active_node_r_hop2){
+            if(i >= _raw_num_node) 
+                continue;
+            calc_min_hash(i);
+            update_node_num++;
+        }
+        std::cout << "测试： update_node_num=" << update_node_num << std::endl;
+// #pragma omp barrier
+
+        // _hash_mat：Sort the rows of the matrix lexicographically
+        // 注意：：：：有的hash没有填值
+        std::sort(_hash_mat.begin(), _hash_mat.end(),
+                  [](const hash_row &a, const hash_row &b) -> bool {
+                      if(a.hashes.size() == 0) return false;
+                      if(b.hashes.size() == 0) return false;
+                      for (int i = 0; i < a.hashes.size(); i++) {
+                          if (a.hashes[i] != b.hashes[i]) return a.hashes[i] < b.hashes[i];
+                      }
+                      return false;
+                  });
+
+        _clusters.clear();
+        int end = 0;
+        // while (end < _num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
+        // while (end < _raw_num_node && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
+        while (end < update_node_num && _hash_mat[end].hashes.size() > 0 && _hash_mat[end].hashes[0] < MAX_HASH) end++; // 过滤掉不存在/无出度的点
+        std::cout << "过滤掉不存在/无出度的点： update_node_num=" << update_node_num << ", end=" << end << std::endl;
+        generate_clusters(0, 0, end);
+
+        _cluster_virtual_nodes.clear();
+        _cluster_virtual_nodes.resize(_clusters.size());
+
+        // generate potential virtual node list
+#pragma omp parallel for
+        for (int i = 0; i < _clusters.size(); i++) {
+            handle_cluster(i, _clusters[i].first, _clusters[i].second);
+        }
+#pragma omp barrier
+
+        for (auto &vns : _cluster_virtual_nodes) {
+            for (auto &vn : vns) {
+                if (vn.u_id >= _adjlists.size()) _adjlists.resize(vn.u_id + 1);
+                _adjlists[vn.u_id] = vn.v_list;
+            }
+        }
+    }
+// */
     void increment_compress(const std::string &file_path){
         std::cout << "_raw_num_node=" << _raw_num_node << std::endl;
-        // 得到入邻居
+        // 加载数据并粗略地更新图结构
+        load_update(file_path);
+        // 得到入邻居: 只获取虚拟点的入邻居
+        timer_next("increment_compress_2");
         _adjlists_in.clear();
         _adjlists_in.resize(_num_node);
         for(int i = 0; i < _num_node; i++){
             for (int j : _adjlists[i]) {
-                _adjlists_in[j].emplace_back(i);
+                if(j >= _raw_num_node) // Only count the in-degree of virtual points
+                    _adjlists_in[j].emplace_back(i);
             }
         }
-        // 加载数据更新图结构
-        load_update(file_path);
-        // 清理无用的虚拟节点：_active_node_v
+        // 2.对新加的边进行合并：add_edges, 目前测试的数据集中没有出现这种情况，所以它反而会浪费时间，最后可以将其注释掉
+        // int merge_num = 0;
+        // sorted_nodes.clear();
+        // int u, v;
+        // for(auto edge : add_edges){
+        //     u = edge.first;
+        //     v = edge.second;
+        //     for(auto in_id : _adjlists_in[v]){
+        //         if(in_id < _raw_num_node || _adjlists[in_id].size() <= 0){
+        //             continue;
+        //         }
+        //         if(try_merge(u, in_id)){
+        //             merge_num++;
+        //             break;
+        //         }
+        //     }
+        // }
+        // std::cout << "merge_num=" << merge_num << std::endl;
+        // 1.清理无用的虚拟节点：_active_node_v
+        timer_next("increment_compress_3");
+        int clean_num = 0;
+        for(auto v : _active_node_v){
+            if((_adjlists_in[v].size()-1) * (_adjlists[v].size() - 1) - 1 < VIRTUAL_THRESHOLD){
+                clean_num++;
+                for(auto in : _adjlists_in[v]){
+                    remove_adj(_adjlists[in], v);
+                    _adjlists[in].insert(_adjlists[in].end(), _adjlists[v].begin(), _adjlists[v].end());
+                }
+                // for(auto out : _adjlists[v]){
+                //     remove_adj(_adjlists_in[out], v);
+                //     _adjlists_in[out].insert(_adjlists_in[out].end(), _adjlists_in[v].begin(), _adjlists_in[v].end());
+                // }
+                // _active_node_r.insert(_adjlists[v].begin(), _adjlists[v].end()); 
+                // _adjlists_in[v].clear();
 
-        // 将受影响的点重新聚类: _active_node_r
-        
-
+                _adjlists[v].clear();
+            }
+            else if(_adjlists_in[v].size() == 0 && _adjlists[v].size() > 0){
+                _adjlists[v].clear();
+            }
+        }
+        std::cout << "clean_num=" << clean_num << std::endl;
+        // 3.将受影响的点重新聚类合并: _active_node_r(及其两跳内的点)
+        // timer_next("increment_compress_4");
+        int old_node_num = _num_node;
+        // std::unordered_set<int> _active_node_r_hop2;
+        // _active_node_r_hop2.insert(_active_node_r.begin(), _active_node_r.end());
+        // for(auto u : _active_node_r){
+        //     _active_node_r_hop2.insert(_adjlists_in[u].begin(), _adjlists_in[u].end());
+        //     // _active_node_r_hop2.insert(_adjlists[u].begin(), _adjlists[u].end());
+        //     // for(auto v : _adjlists_in[u]){
+        //     //     _active_node_r_hop2.insert(_adjlists_in[v].begin(), _adjlists_in[v].end());
+        //     //     _active_node_r_hop2.insert(_adjlists[v].begin(), _adjlists[v].end());
+        //     // }
+        //     // for(auto v : _adjlists[u]){
+        //     //     _active_node_r_hop2.insert(_adjlists_in[v].begin(), _adjlists_in[v].end());
+        //     //     _active_node_r_hop2.insert(_adjlists[v].begin(), _adjlists[v].end());
+        //     // }
+        // }
+        timer_next("increment_compress_5");
+        // one_pass_by_active(_active_node_r_hop2);
+        // one_pass();
+        std::cout << "add virtual num=" << _num_node - old_node_num << std::endl;
 
     }
 
@@ -635,6 +835,8 @@ public:
             if(_adjlists[i].size() > 0) _num_node_new++;
         }
         fprintf(fp, "%d %d\n", int(_num_node_new), int(_raw_num_node_new));
+        printf("_num_node=%d _raw_num_node=%d\n", int(_num_node), int(_raw_num_node));
+        printf("_num_node_new=%d _raw_num_node_new=%d\n", int(_num_node_new), int(_raw_num_node_new));
         for (int i = 0; i < _num_node; i++) {
             if(_adjlists[i].size() > 0){
                 fprintf(fp, "%d %d %d\n", i, _x[i], _y[i]);
@@ -669,6 +871,15 @@ public:
 
     // 解压：将图更改为为压缩时的结构
     void decompress(){
+        std::cout << "start decompress..." << std::endl;
+        // 如果前面没有一直维护_adjlists_in，则重新得到入邻居,
+        _adjlists_in.clear();
+        _adjlists_in.resize(_num_node);
+        for(int i = 0; i < _num_node; i++){
+            for (int j : _adjlists[i]) {
+                _adjlists_in[j].emplace_back(i);
+            }
+        }
         // 需要保证，_adjlists_in已经初始化赋值了
         std::cout << "_raw_num_node=" << _raw_num_node << std::endl;
         for(int i = _raw_num_node; i < _num_node; i++){ // i is a virtual node
@@ -678,10 +889,10 @@ public:
                     std::vector<int>::iterator it = find(u_adjlist.begin(), u_adjlist.end(), i);
                     std::swap(*it, u_adjlist.back());
                     u_adjlist.pop_back();
-                    // u_adjlist.insert(u_adjlist.end(), _adjlists[i].begin(), _adjlists[i].end());
-                    for(auto q : _adjlists[i]){
-                        u_adjlist.push_back(q);
-                    }
+                    u_adjlist.insert(u_adjlist.end(), _adjlists[i].begin(), _adjlists[i].end());
+                    // for(auto q : _adjlists[i]){
+                    //     u_adjlist.push_back(q);
+                    // }
                 }
 
             }
