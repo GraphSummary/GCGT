@@ -13,6 +13,7 @@
 #include <queue>
 #include <cassert>
 #include <algorithm>
+#include <memory.h>
 
 using std::vector;
 using std::cout;
@@ -219,15 +220,21 @@ public:
         // std::cout << "start second phase..." << MAX_HOP <<  std::endl;
         std::queue<vertex_t> old_q;
         std::queue<vertex_t> new_q;
-        // unordered_set<vertex_t> visited_nodes;
-        bool *visited_nodes = new bool[nodes_num];  // 考虑换掉，这样申请内存太浪费了
-        bool *in_queue_nodes = new bool[nodes_num];
+        // bool *visited_nodes_1 = new bool[nodes_num]();  // 加()初始化为0； 考虑换掉，这样申请内存太浪费了
+        // bool *in_queue_nodes_1 = new bool[nodes_num]();
+        unordered_map<vertex_t, bool> visited_nodes;
+        unordered_map<vertex_t, bool> in_queue_nodes;
+
+        // memset(visited_nodes_1, false, sizeof(visited_nodes_1));
+        // memset(in_queue_nodes_1, false, sizeof(in_queue_nodes_1));
 
         for(auto edge : nodes[source].out_adj){
             vertex_t u = edge.first;
             old_q.push(u);
             in_queue_nodes[u] = 1;
             visited_nodes[u] = 1;
+            // in_queue_nodes_1[u] = 1;
+            // visited_nodes_1[u] = 1;
         }
 
         // std::cout << "old_id : new_id" << std::endl;
