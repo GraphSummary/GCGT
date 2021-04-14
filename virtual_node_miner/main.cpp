@@ -56,7 +56,7 @@ int main(int argc,char *argv[]) {
     vnminer.write_vertex(com_base_v); // 
 
     // 增量压缩
-    timer_next("increment_compress");
+    // timer_next("increment_compress");
     vnminer.increment_compress(update_e);
     timer_next("write_com_updated_e");
     vnminer.write_graph(com_updated_e); // write edge file
@@ -66,10 +66,11 @@ int main(int argc,char *argv[]) {
     vnminer.write_vertex(com_updated_v); // 
 
     // 测试
-    std::cout << "==============" << std::endl;
-    timer_next("decompress");
-    vnminer.decompress(); // 解压，用于测试压缩是否正确
-    vnminer.write_de_graph("./out/de_edge.e"); // write edge file
+    // std::cout << "=====测试=========" << std::endl;
+    // timer_next("decompress");
+    // vnminer.decompress(); // 解压，用于测试压缩是否正确
+    // timer_next("write_decompress_e");
+    // vnminer.write_de_graph("./out/de_edge.e"); // write edge file
 
     timer_end(true, "-compress");
 

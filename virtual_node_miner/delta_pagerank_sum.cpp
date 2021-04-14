@@ -306,7 +306,8 @@ public:
     static int computer_num;
 };
 
-void copy_data(DeltaPageRankSum &d1, DeltaPageRankSum &d2, int vertex_num){
+void copy_data(DeltaPageRankSum &d1, DeltaPageRankSum &d2){
+    int vertex_num = d1.vertex_num;  // 用的原图的，因为新图的可能大于原图(新图可能增加了新的虚拟点)
     Page* pages = d1.pages;
     Page* inc_pages = d2.pages;
     for(int i = 0; i < vertex_num; i++){
@@ -356,7 +357,7 @@ int main(int argc, char const *argv[])
     // 回收
     deltaPageRankSum.amend(-1);
     // 切换数据
-    copy_data(deltaPageRankSum, deltaPageRankSum_inc, deltaPageRankSum.vertex_num);
+    copy_data(deltaPageRankSum, deltaPageRankSum_inc);
     // 补发
     deltaPageRankSum_inc.amend(1);
 
