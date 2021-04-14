@@ -62,7 +62,7 @@ static void timer_next(const std::string& name) {
   }
 }
 
-static void timer_end(bool iswrite = false, std::string appname="") {
+static void timer_end(bool iswrite = false, std::string appname="", std::string resultPath = "./out/result.txt") {
   if (timer_enabled) {
     timer_next("end");
 
@@ -78,7 +78,8 @@ static void timer_end(bool iswrite = false, std::string appname="") {
     }
     if (iswrite){
         // 将运行时间写入文件
-        std::string resultPath = "./out/result.txt";
+        // std::string resultPath = "./out/result.txt";
+        std::cout << "时间写入文件：" << resultPath << std::endl;
         std::ofstream fout(resultPath, std::ios::app);
         for (size_t i = 0; i < timers.size() - 1; i++) {
           std::string& name = timers[i].first;
