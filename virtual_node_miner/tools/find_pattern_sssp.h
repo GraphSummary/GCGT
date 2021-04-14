@@ -1,6 +1,9 @@
 /*
     查找SSSP中的特殊的结构，即只有一个入度和一个出度的结构
 */
+#ifndef TOOLS_FIND_PATTERN_SSSP_H_
+#define TOOLS_FIND_PATTERN_SSSP_H_
+
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -14,10 +17,10 @@
 #include <cassert>
 #include <algorithm>
 #include <memory.h>
+#include "../graph/node.h"
+#include "../graph/edge.h"
 
 using std::vector;
-using std::cout;
-using std::endl;
 using std::unordered_map;
 using std::unordered_set;
 using std::ifstream;
@@ -26,57 +29,18 @@ using std::ofstream;
 #define MAX_DIST 0xffff
 
 template<class vertex_t, class value_t>
-class Node
-{
-public:
-    vertex_t id;
-    vertex_t tag=0;
-    std::vector<std::pair<vertex_t, value_t>> in_adj;
-    std::vector<std::pair<vertex_t, value_t>> out_adj;
-};
-
-template<class vertex_t, class value_t>
-class EdgeData
-{
-public:
-    vertex_t source;
-    vertex_t destination;
-    value_t weight;
-    EdgeData(vertex_t s, vertex_t d, value_t w){
-        source = s;
-        destination = d;
-        weight = w;
-    }
-};
-
-template<class vertex_t, class value_t>
-class ExpandData
-{
-public:
-    vertex_t id;
-    std::vector<vertex_t> ids; // 属于这个结构的id set
-    std::vector<std::pair<vertex_t, value_t>> edges; // s: (d, weight)
-    void print_edge(){
-        std::cout << "id=" << id << " size=" << edges.size() << std::endl;
-        for(auto edge : edges){
-            std::cout << edge.first << ": " << edge.second << std::endl;
-        }
-    }
-};
-
-template<class vertex_t, class value_t>
 class FindPatternForSSSP{
 public:
     void load(const std::string &efile){
         std::ifstream inFile(efile);
         if(!inFile){
-            cout << "open file failed. " << efile << endl;
+           std::cout << "open file failed. " << efile <<std::endl;
             exit(0);
         }
-        cout << "finish read file... " << efile << endl;
+       std::cout << "finish read file... " << efile <<std::endl;
         vertex_t u, v;
         value_t w;
-        std::vector<EdgeData<vertex_t, value_t>> edges;
+        std::vector<Edge<vertex_t, value_t>> edges;
         vertex_t max_id;
         while (inFile >> u >> v >> w) {
             assert(u >= 0);
@@ -84,7 +48,7 @@ public:
             assert(w >= 0);
             max_id = std::max(max_id, u);
             max_id = std::max(max_id, v);
-            edges.emplace_back(EdgeData<vertex_t, value_t>(u, v, w));
+            edges.emplace_back(Edge<vertex_t, value_t>(u, v, w));
         }
 
         nodes = new Node<vertex_t, value_t>[max_id+1]; 
@@ -366,7 +330,7 @@ public:
     void write_supernode(const std::string &efile){
         ofstream outfile(efile);
         if(!outfile){
-            cout << "open file failed. " << efile << endl;
+           std::cout << "open file failed. " << efile <<std::endl;
             exit(0);
         }
         for(vertex_t i = 0; i < supernodes_num; i++){
@@ -381,7 +345,7 @@ public:
         }
     }
 
-    void start(){
+    void start_find(){
         // init Fc
         Fc = new vertex_t[nodes_num+1];
         for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = i;
@@ -396,7 +360,7 @@ public:
             second_phase(source);
             third_phase(source);
             if(i % 10000 == 0){
-                cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
+               std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
             // break;
         }
@@ -521,21 +485,23 @@ public:
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
 };  
 
-int main(int argc,char *argv[]) {
-    // g++ find_pattern_sssp.cc && ./a.out ../input/test_data_sssp_pattern_2.e
-    // g++ find_pattern_sssp.cc && ./a.out /home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31.e
-    // g++ find_pattern_sssp.cc && ./a.out /home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted.e
-    // g++ find_pattern_sssp.cc && ./a.out /home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted.e
-    timer_start(true);
-    std::string efile(argv[1]); 
-    FindPatternForSSSP<int, int> finder = FindPatternForSSSP<int, int>();
-    timer_next("load_graph");
-    finder.load(efile);
-    timer_next("find pattern");
-    finder.start();
-    timer_next("wirte file");
-    finder.write_supernode("../out/a_pattern");
-    timer_end(false);
+// int main(int argc,char *argv[]) {
+//     // g++ find_pattern_sssp.cc && ./a.out ../input/test_data_sssp_pattern_2.e
+//     // g++ find_pattern_sssp.cc && ./a.out /home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31.e
+//     // g++ find_pattern_sssp.cc && ./a.out /home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted.e
+//     // g++ find_pattern_sssp.cc && ./a.out /home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted.e
+//     timer_start(true);
+//     std::string efile(argv[1]); 
+//     FindPatternForSSSP<int, int> finder = FindPatternForSSSP<int, int>();
+//     timer_next("load_graph");
+//     finder.load(efile);
+//     timer_next("find pattern");
+//     finder.start();
+//     timer_next("wirte file");
+//     finder.write_supernode("../out/a_pattern");
+//     timer_end(false);
 
-    return 0;
-}
+//     return 0;
+// }
+
+#endif  // TOOLS_FIND_PATTERN_SSSP_H_

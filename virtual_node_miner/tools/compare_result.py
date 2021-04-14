@@ -1,11 +1,22 @@
+'''
+    用于结果对比：
+        文件格式：第一列为顶点编号，第二列为顶点的值
+'''
+
 import os
 import pandas as pd
-
-    
+import sys
 
 if __name__ == "__main__":
-    # path = r".\out\pr_delta_pre.txt"
-    path1 = r"././out/pr_delta_pre.txt"
+    # 运行格式： python3 ./compare_result.py ../out/sssp_result ../out/sssp_result_sum
+
+    path1 = sys.argv[1].strip(' ')
+    path2 = sys.argv[2].strip(' ')
+    print('参数列表:', str(sys.argv))
+    print('path1:', path1)
+    print('path2:', path2)
+
+    # path1 = r"././out/pr_delta_pre.txt"
     df1 = pd.read_csv(path1, header=None, sep=' ')
     df1 = df1.sort_values(by=0, ascending=True)  # 按age排列, ascending=False表示降序，为True为升序，默认为True
     df1.to_csv(path1, index=None, columns=None, header=False, sep=' ') # 重新保存文件
@@ -13,8 +24,7 @@ if __name__ == "__main__":
     # print(df1.tail())
     print(df1.shape)
 
-    path2 = r"././out/pr_delta_sum_com.txt"
-    # path2 = r"././out/pr_delta_pre_1.txt"
+    # path2 = r"././out/pr_delta_sum_com.txt"
     df2 = pd.read_csv(path2, header=None, sep=' ')
     df2 = df2.sort_values(by=0, ascending=True)  # 按age排列, ascending=False表示降序，为True为升序，默认为True
     df2.to_csv(path2, index=None, columns=None, header=False, sep=' ')  # 重新保存文件
