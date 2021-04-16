@@ -70,47 +70,43 @@ public:
         // print_result();
 
         vertex_t step = 0;
-        vertex_t contain_cnt = 0;
-        vertex_t node_send_cnt = 0;
-        vertex_t super_send_cnt = 0;
+        // vertex_t contain_cnt = 0;
+        unsigned long long int node_send_cnt = 0;
+        unsigned long long int super_send_cnt = 0;
         value_t delta_sum = 0;
+        value_t itrative_threshold = 3;
+        value_t threshold_change_cnt = 0;
+        bool is_convergence;
+
         while(true){
             delta_sum = 0;
-            // receive
-            for(vertex_t i = 0; i < this->nodes_num; i++){
-                Node<vertex_t, value_t>& node = this->nodes[i];
-                value_t old_value = node.value;
-                app_->accumulate(node.value, node.recvDelta); // delat -> value
-                delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
-                // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
-                node.oldDelta = node.recvDelta;
-                node.recvDelta = app_->default_v();
-            }
+            is_convergence = true;
+
             // send
             for(vertex_t i = 0; i < this->nodes_num; i++){
                 Node<vertex_t, value_t>& node = this->nodes[i];
-                if(this->Fc[i] != this->Fc_default_value){ // 测试：仅仅用来统计内点次数
-                    contain_cnt++;
-                }
-                if(node.oldDelta == app_->default_v()){
+                // if(this->Fc[i] != this->Fc_default_value){ // 测试：仅仅用来统计内点次数; 这个调式耗时2s
+                //     contain_cnt++;
+                // }
+                if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v() || this->Fc[i] != this->Fc_default_value){
                     continue;
                 }
-                if(this->Fc[i] == i){
-                    // 超点send
-                    ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
-                    Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                    if(node.oldDelta == app_->default_v()){
-                        continue;
-                    }
-                    for(auto& edge : supernode.edges){ // i -> adj
-                        value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-                        value_t sendDelta; // i's 
-                        app_->g_func(node.oldDelta, edge.second, sendDelta);
-                        app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-                        super_send_cnt++;
-                    }
-                }
-                else if(this->Fc[i] == this->Fc_default_value){
+                // if(this->Fc[i] == i){
+                //     // 超点send
+                //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
+                //     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
+                //     if(node.oldDelta == app_->default_v()){
+                //         continue;
+                //     }
+                //     for(auto& edge : supernode.edges){ // i -> adj
+                //         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                //         value_t sendDelta; // i's 
+                //         app_->g_func(node.oldDelta, edge.second, sendDelta);
+                //         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                //         super_send_cnt++;
+                //     }
+                // }
+                // else if(this->Fc[i] == this->Fc_default_value){
                     // 普通点send
                     for(auto& edge : node.out_adj){ // i -> adj
                         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
@@ -119,39 +115,74 @@ public:
                         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                         node_send_cnt++;
                     }
-                }
-                else{
-                    continue;
-                }
+                // }
+                // else{
+                //     continue;
+                // }
                 node.oldDelta = app_->default_v(); // delta发完需要清空
             }
-            // for(vertex_t i = 0; i < this->supernodes_num; i++){
-            //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
-            //     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-            //     if(node.oldDelta == app_->default_v()){
-            //         continue;
-            //     }
-            //     for(auto& edge : supernode.edges){ // i -> adj
-            //         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-            //         value_t sendDelta; // i's 
-            //         app_->g_func(node.oldDelta, edge.second, sendDelta);
-            //         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-            //         super_send_cnt++;
-            //     }
-            //     node.oldDelta = app_->default_v();
-            // }
+            // 超点send
+            for(vertex_t i = 0; i < this->supernodes_num; i++){
+                ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
+                Node<vertex_t, value_t>& node = this->nodes[supernode.id];
+                if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
+                    continue;
+                }
+                for(auto& edge : supernode.edges){ // i -> adj
+                    value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                    value_t sendDelta; // i's 
+                    app_->g_func(node.oldDelta, edge.second, sendDelta);
+                    app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                    super_send_cnt++;
+                }
+                node.oldDelta = app_->default_v();
+            }
+            // receive
+            for(vertex_t i = 0; i < this->nodes_num; i++){
+                Node<vertex_t, value_t>& node = this->nodes[i];
+                value_t old_value = node.value;
+                app_->accumulate(node.value, node.recvDelta); // delat -> value
+                // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
+                if(old_value != node.value){
+                    is_convergence = false;
+                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                }
+                // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                // node.oldDelta = node.recvDelta;
+                node.recvDelta = app_->default_v();
+            }
             // print_result();
             step++;
             LOG(INFO) << "step=" << step << " delta_sum=" << delta_sum;
-            if(delta_sum < FLAGS_convergence_threshold || step > 1000){
+
+            // 根新阈值
+            if(is_convergence && step < 1000){
+                bool flag = false;
+                for(vertex_t i = 0; i < this->nodes_num; i++){
+                    Node<vertex_t, value_t>& node = this->nodes[i];
+                    if((this->Fc[i] == this->Fc_default_value || this->Fc[i] == i) && node.oldDelta != app_->default_v()){
+                        flag = true;
+                        std::cout << i << " " << this->Fc[i] << " " << node.oldDelta << " " << node.recvDelta << std::endl;
+                        break;
+                    }
+                }
+                if(!flag){
+                    std::cout << "测试" << std::endl;
+                    break;
+                }
+                itrative_threshold += 15 + step*0.1;
+                threshold_change_cnt++;
+                std::cout << "测试---itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
+                continue;
+            }
+
+            if(is_convergence || step > 1000){
                 break;
             }
         }        
         LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt <<
         " f_cnt=" << app_->f_cnt;
-        LOG(INFO) << "contain_cnt=" << contain_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
-        printf("node_send_cnt=%d= super_send_cnt=%d\n", node_send_cnt, super_send_cnt);
     }
 
 protected:
