@@ -124,6 +124,8 @@ public:
         vertex_t step = 0;
         value_t delta_sum = 0;
         bool is_convergence;
+        value_t itrative_threshold = 3;
+        value_t threshold_change_cnt = 0;
         unsigned long long int node_send_cnt = 0;
 
         while(true){
@@ -133,7 +135,7 @@ public:
             // send
             for(vertex_t i = 0; i < nodes_num; i++){
                 Node<vertex_t, value_t>& node = nodes[i];
-                if(node.oldDelta == app_->default_v()){
+                if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
                     continue;
                 }
                 for(auto edge : node.out_adj){ // i -> adj
@@ -161,12 +163,33 @@ public:
             }
             step++;
             LOG(INFO) << "step=" << step << " delta_sum=" << delta_sum;
+
+            // 根新阈值
+            if(is_convergence && step < 1000){
+                bool flag = false;
+                for(vertex_t i = 0; i < nodes_num; i++){
+                    Node<vertex_t, value_t>& node = nodes[i];
+                    if(node.oldDelta != app_->default_v()){
+                        flag = true;
+                        std::cout << i << " " << node.oldDelta << " " << node.recvDelta << std::endl;
+                        break;
+                    }
+                }
+                if(!flag){
+                    std::cout << "测试" << std::endl;
+                    break;
+                }
+                itrative_threshold += 15 + step*0.1;
+                threshold_change_cnt++;
+                std::cout << "测试---itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
+                continue;
+            }
+
             if(is_convergence || step > 1000){
                 break;
             }
         }
-        LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt <<
-        " f_cnt=" << app_->f_cnt;
+        LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt << " f_cnt=" << app_->f_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt;
     }
 
