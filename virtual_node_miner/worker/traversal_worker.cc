@@ -124,18 +124,23 @@ public:
         vertex_t step = 0;
         value_t delta_sum = 0;
         bool is_convergence;
-        value_t itrative_threshold = 3;
+        value_t itrative_threshold = 3; 
         value_t threshold_change_cnt = 0;
         unsigned long long int node_send_cnt = 0;
+        unordered_set<vertex_t> curr_modified_;
+        unordered_set<vertex_t> next_modified_;
 
         while(true){
             delta_sum = 0;
             is_convergence = true;
+            next_modified_.clear();
 
             // send
-            for(vertex_t i = 0; i < nodes_num; i++){
+            // for(vertex_t i = 0; i < nodes_num; i++){
+            for(auto i : curr_modified_){
                 Node<vertex_t, value_t>& node = nodes[i];
-                if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
+                // if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
+                if(node.oldDelta > itrative_threshold){
                     continue;
                 }
                 for(auto edge : node.out_adj){ // i -> adj
@@ -156,13 +161,18 @@ public:
                 // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 if(old_value != node.value){
                     is_convergence = false;
+                    // next_modified_.insert(i);
                     app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                }
+                if(node.oldDelta != app_->default_v()){ // 需要单独判断这个点是否时活跃点
+                    next_modified_.insert(i);
                 }
                 // node.oldDelta = node.recvDelta;
                 node.recvDelta = app_->default_v();
             }
+            next_modified_.swap(curr_modified_);
             step++;
-            LOG(INFO) << "step=" << step << " delta_sum=" << delta_sum;
+            LOG(INFO) << "step=" << step << " curr_modified_=" << curr_modified_.size();
 
             // 根新阈值
             if(is_convergence && step < 1000){
