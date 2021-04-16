@@ -91,10 +91,9 @@ public:
         value_t value;
         vector<std::pair<vertex_t, value_t>> data;
         for(vertex_t i = 0; i < nodes_num; i++){
-            app_->init_c(vertex_reverse_map[i], delta, data);
-            nodes[i].recvDelta = delta;
-            app_->init_v(i, value, data);
-            nodes[i].value = value;
+            app_->init_c(vertex_reverse_map[i], nodes[i].recvDelta, data);
+            this->nodes[i].oldDelta = app_->default_v();
+            app_->init_v(i, nodes[i].value, data);
         }
     }
 
@@ -124,17 +123,13 @@ public:
         // print_result();
         vertex_t step = 0;
         value_t delta_sum = 0;
+        bool is_convergence;
+        unsigned long long int node_send_cnt = 0;
+
         while(true){
             delta_sum = 0;
-            // receive
-            for(vertex_t i = 0; i < nodes_num; i++){
-                Node<vertex_t, value_t>& node = nodes[i];
-                value_t old_value = node.value;
-                app_->accumulate(node.value, node.recvDelta); // delat -> value
-                delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
-                node.oldDelta = node.recvDelta;
-                node.recvDelta = app_->default_v();
-            }
+            is_convergence = true;
+
             // send
             for(vertex_t i = 0; i < nodes_num; i++){
                 Node<vertex_t, value_t>& node = nodes[i];
@@ -146,14 +141,33 @@ public:
                     value_t sendDelta; // i's 
                     app_->g_func(node.oldDelta, edge.second, sendDelta);
                     app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                    node_send_cnt++;
                 }
+                node.oldDelta = app_->default_v(); // delta发完需要清空
+            }
+            // receive
+            for(vertex_t i = 0; i < nodes_num; i++){
+                Node<vertex_t, value_t>& node = nodes[i];
+                value_t old_value = node.value;
+                app_->accumulate(node.value, node.recvDelta); // delat -> value
+                // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
+                // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                if(old_value != node.value){
+                    is_convergence = false;
+                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                }
+                // node.oldDelta = node.recvDelta;
+                node.recvDelta = app_->default_v();
             }
             step++;
             LOG(INFO) << "step=" << step << " delta_sum=" << delta_sum;
-            if(delta_sum < FLAGS_convergence_threshold || step > 90){
+            if(is_convergence || step > 1000){
                 break;
             }
         }
+        LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt <<
+        " f_cnt=" << app_->f_cnt;
+        LOG(INFO) << "node_send_cnt=" << node_send_cnt;
     }
 
 
@@ -166,10 +180,10 @@ public:
 };
 
 int main(int argc,char **argv) {
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_2.e -shortestpath_source=0 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31.e -shortestpath_source=1 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted.e -shortestpath_source=1 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted.e -shortestpath_source=1 -output=../out/sssp_result
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result
     google::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
     FLAGS_logtostderr = true; //设置日志消息是否转到标准输出而不是日志文件, 即true：不写入文件，只在终端显示
