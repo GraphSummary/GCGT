@@ -129,32 +129,40 @@ public:
         value_t itrative_threshold = 3; 
         value_t threshold_change_cnt = 0;
         unsigned long long int node_send_cnt = 0;
-        unordered_set<vertex_t> curr_modified_;
-        unordered_set<vertex_t> next_modified_;
         vertex_t begin = 0;
         vertex_t end = nodes_num;
+        Bitset curr_modified_, next_modified_;
+        curr_modified_.init(end-begin);
+        next_modified_.init(end-begin);
+        vertex_t active_node_num = 0;
 
         while(true){
             delta_sum = 0;
             is_convergence = true;
-            next_modified_.clear();
+            next_modified_.parallel_clear(4);
 
             // send
-            // for(vertex_t i = 0; i < nodes_num; i++){
-            for(auto i : curr_modified_){
-                    Node<vertex_t, value_t>& node = nodes[i];
-                    // if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
-                    if(node.oldDelta > itrative_threshold){
-                        continue;
+            for(vertex_t batch = begin; batch < end; batch+=64){
+                vertex_t v = batch;
+                uint64_t word = curr_modified_.get_word(batch-begin); // 获得数组中的一个元素，每个元素64位，每位表示一个元素
+                while (word != 0) {
+                    if (word & 1) {
+                        Node<vertex_t, value_t>& node = nodes[v];
+                        // if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
+                        if(node.oldDelta < itrative_threshold){
+                            for(auto edge : node.out_adj){ // i -> adj
+                                value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
+                                value_t sendDelta; // i's 
+                                app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                                node_send_cnt++;
+                            }
+                            node.oldDelta = app_->default_v(); // delta发完需要清空 
+                        }
                     }
-                    for(auto edge : node.out_adj){ // i -> adj
-                        value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
-                        value_t sendDelta; // i's 
-                        app_->g_func(node.oldDelta, edge.second, sendDelta);
-                        app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-                        node_send_cnt++;
-                    }
-                    node.oldDelta = app_->default_v(); // delta发完需要清空 
+                    ++v;
+                    word = word >> 1;
+                }
             }
 
             // receive
@@ -166,36 +174,25 @@ public:
                 // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 if(old_value != node.value){
                     is_convergence = false;
+                    // next_modified_.insert(i);
                     app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 }
                 if(node.oldDelta != app_->default_v()){ // 需要单独判断这个点是否时活跃点
-                    next_modified_.insert(i);
+                    next_modified_.set_bit(i - begin);
                 }
                 // node.oldDelta = node.recvDelta;
                 node.recvDelta = app_->default_v();
             }
             next_modified_.swap(curr_modified_);
             step++;
-            LOG(INFO) << "step=" << step << " curr_modified_=" << curr_modified_.size();
+            active_node_num = curr_modified_.parallel_count(4);
+            LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
 
             // 根新阈值
-            if(is_convergence && step < 1000){
-                bool flag = false;
-                for(vertex_t i = 0; i < nodes_num; i++){
-                    Node<vertex_t, value_t>& node = nodes[i];
-                    if(node.oldDelta != app_->default_v()){
-                        flag = true;
-                        std::cout << i << " " << node.oldDelta << " " << node.recvDelta << std::endl;
-                        break;
-                    }
-                }
-                if(!flag){
-                    std::cout << "测试" << std::endl;
-                    break;
-                }
+            if(is_convergence && active_node_num != 0 && step < 1000){
                 itrative_threshold += 15 + step*0.1;
                 threshold_change_cnt++;
-                std::cout << "测试---itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
+                std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
                 continue;
             }
 
