@@ -81,7 +81,7 @@ public:
         unsigned long long int node_send_cnt = 0;
         unsigned long long int super_send_cnt = 0;
         value_t delta_sum = 0;
-        value_t itrative_threshold = 999;
+        value_t itrative_threshold = FLAGS_delta_step_threshold;
         value_t threshold_change_cnt = 0;
         bool is_convergence;
         vertex_t begin = 0;
@@ -112,7 +112,8 @@ public:
                                 // 超点send
                                 ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
                                 Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                                for(auto& edge : supernode.edges){ // i -> adj
+                                // for(auto& edge : supernode.edges){ // i -> adj
+                                for(auto& edge : supernode.bound_edges){ // i -> adj
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     app_->g_func(node.oldDelta, edge.second, sendDelta);
@@ -174,23 +175,52 @@ public:
             step++;
             next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
-            LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
+            if(step % 100 == 0)
+                LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
 
             // 更新阈值
-            if(is_convergence && active_node_num != 0 && step < 1000){
+            if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
                 itrative_threshold += 15 + step*0.1;
                 threshold_change_cnt++;
                 std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
                 continue;
             }
 
-            if(is_convergence || step > 1000){
+            if(is_convergence || step > FLAGS_max_iterater_num){
+                // 结果内不点值分配-超点send -> inner_edges
+                for(vertex_t i = 0; i < this->supernodes_num; i++){
+                    ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
+                    Node<vertex_t, value_t>& node = this->nodes[supernode.id];
+                    if(node.value == app_->default_v()){
+                        continue;
+                    }
+                    for(auto& edge : supernode.inner_edges){ // i -> adj
+                        value_t& value = this->nodes[edge.first].value; // adj's value
+                        value_t sendDelta; // i's 
+                        app_->g_func(node.value, edge.second, sendDelta);
+                        app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
+                        super_send_cnt++;
+                    }
+                }
                 break;
             }
-        }        
-        LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt <<
-        " f_cnt=" << app_->f_cnt;
+        } 
+
+        LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << app_->g_cnt << " f_cnt=" << app_->f_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
+        // 统计结果写入文件：
+        ofstream fout(FLAGS_result_analyse, std::ios::app);
+        fout << "TraversalWorkerSum_step:" << step << "\n";
+        fout << "TraversalWorkerSum_threshold_change_cnt:" << threshold_change_cnt << "\n";
+        fout << "TraversalWorkerSum_g_cnt:" << app_->g_cnt << "\n";
+        fout << "TraversalWorkerSum_f_cnt:" << app_->f_cnt << "\n";
+        fout << "TraversalWorkerSum_node_send_cnt:" << node_send_cnt << "\n";
+        fout << "TraversalWorkerSum_super_send_cnt:" << super_send_cnt << "\n";
+        fout.close();
+    }
+
+    ~TraversalWorkerSum(){
+        delete app_;
     }
 
 protected:
@@ -200,10 +230,10 @@ protected:
 
 
 int main(int argc,char **argv) {
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result_sum
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result_sum
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result_sum
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result_sum
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=./out/sssp_result_analys
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result_sum  -delta_step_threshold=3
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_0_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=./out/sssp__result_analyse
 
     google::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
@@ -218,13 +248,13 @@ int main(int argc,char **argv) {
     worker.load(base_edge);
     timer_next("find_pattern");
     worker.start_find();
-    timer_next("write_pattern");
-    worker.write_supernode("../out/a_pattern");
+    // timer_next("write_pattern");
+    // worker.write_supernode("./out/a_pattern");
     timer_next("compute");
     worker.start();
     timer_next("write_result");
     worker.write_result(output);
-    timer_end(true, "TraversalWorkerSum"+base_edge, "../out/traversal_run_time");
+    timer_end(true, "TraversalWorkerSum", FLAGS_result_analyse);
 
     google::ShutDownCommandLineFlags();
     google::ShutdownGoogleLogging();

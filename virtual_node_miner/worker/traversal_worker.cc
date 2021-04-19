@@ -28,7 +28,7 @@ using std::unordered_map;
 using std::unordered_set;
 using std::ifstream;
 using std::ofstream;
-using Bitset = grape::Bitset;
+using grape::Bitset;
 
 template<class vertex_t, class value_t>
 class TraversalWorker{
@@ -126,7 +126,7 @@ public:
         vertex_t step = 0;
         value_t delta_sum = 0;
         bool is_convergence;
-        value_t itrative_threshold = 3; 
+        value_t itrative_threshold = FLAGS_delta_step_threshold;
         value_t threshold_change_cnt = 0;
         unsigned long long int node_send_cnt = 0;
         vertex_t begin = 0;
@@ -183,27 +183,40 @@ public:
                 // node.oldDelta = node.recvDelta;
                 node.recvDelta = app_->default_v();
             }
-            next_modified_.swap(curr_modified_);
             step++;
+            next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
-            LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
+            if(step % 100 == 0)
+                LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
 
-            // 根新阈值
-            if(is_convergence && active_node_num != 0 && step < 1000){
+            // 更新阈值
+            if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
                 itrative_threshold += 15 + step*0.1;
                 threshold_change_cnt++;
                 std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
                 continue;
             }
 
-            if(is_convergence || step > 1000){
+            if(is_convergence || step > FLAGS_max_iterater_num){
                 break;
             }
         }
-        LOG(INFO) << "app convergence step=" << step << " delta_sum=" << delta_sum << " g_cnt=" << app_->g_cnt << " f_cnt=" << app_->f_cnt;
+        LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << app_->g_cnt << " f_cnt=" << app_->f_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt;
+        // 统计结果写入文件：
+        ofstream fout(FLAGS_result_analyse, std::ios::app);
+        fout << "TraversalWorker_step:" << step << "\n";
+        fout << "TraversalWorker_threshold_change_cnt:" << threshold_change_cnt << "\n";
+        fout << "TraversalWorker_g_cnt:" << app_->g_cnt << "\n";
+        fout << "TraversalWorker_f_cnt:" << app_->f_cnt << "\n";
+        fout << "TraversalWorker_node_send_cnt:" << node_send_cnt << "\n";
+        fout.close();
     }
 
+    ~TraversalWorker(){
+        delete []nodes;
+        delete app_;
+    }
 
 public:
     unordered_map<vertex_t, vertex_t> vertex_map; //原id: 新id
@@ -214,10 +227,10 @@ public:
 };
 
 int main(int argc,char **argv) {
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result
-    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3
+    // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3 -result_analyse=./out/sssp__result_analyse
     google::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
     FLAGS_logtostderr = true; //设置日志消息是否转到标准输出而不是日志文件, 即true：不写入文件，只在终端显示
@@ -233,7 +246,7 @@ int main(int argc,char **argv) {
     worker.start();
     timer_next("write_result");
     worker.write_result(output);
-    timer_end(true, "TraversalWorker_"+base_edge, "../out/traversal_run_time");
+    timer_end(true, "TraversalWorker", FLAGS_result_analyse);
 
     google::ShutDownCommandLineFlags();
     google::ShutdownGoogleLogging();
