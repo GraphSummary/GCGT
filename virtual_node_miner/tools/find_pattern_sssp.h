@@ -84,9 +84,9 @@ public:
         std::cout << "load finied, nodes_num=" << nodes_num << " edges_num=" << edges.size() << std::endl;
     }
 
-    void Dijkstra(ExpandData<vertex_t, value_t> &expand_data, const vertex_t source){
+    void Dijkstra(ExpandData<vertex_t, value_t> &expand_data, const vertex_t source, std::vector<vertex_t> &node_set){
         // std::cout << "Dijkstra ..." << std::endl;
-        std::vector<vertex_t> node_set = expand_data.ids; 
+        // std::vector<vertex_t> node_set = expand_data.ids; 
         unordered_map<vertex_t, value_t> dist_map;
         unordered_map<vertex_t, bool> visited;
         for(auto u : node_set){
@@ -109,15 +109,37 @@ public:
             }
             visited[min_j] = 1;
             for(auto edge : nodes[min_j].out_adj){
-                vertex_t u = edge.first;
-                if(dist_map[u] > dist_map[min_j] + edge.second){
+                vertex_t u = edge.first; // 要保证u属于这个集和内,即u是内部点，不是边界点
+                if(Fc[u] == source && dist_map[u] > dist_map[min_j] + edge.second){
                     dist_map[u] = dist_map[min_j] + edge.second;
                 }
             }
         }
-        for(auto u : node_set){
-            expand_data.edges.emplace_back(std::pair<vertex_t, value_t>(u, dist_map[u]));
-            // std::cout << getOriginId(u) << ": " << dist_map[u] << std::endl;
+        // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+        for(auto kv : dist_map){
+            if(kv.first != source){ // source -> source 不必放入
+                // expand_data.edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second));
+                // s -> (inner_node + bound_node)
+                expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second));
+            }
+            // std::cout << "--" << kv.first << ": " << kv.second << std::endl;
+        }
+        // 为结构加入直接指向外部点的最短距离边： source -> 外部id
+        for(auto kv : dist_map){
+            bool is_inner = true;
+            for(auto edge : nodes[kv.first].out_adj){
+                if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                    // s -> 外部点
+                    expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(edge.first, kv.second + edge.second));
+                    is_inner = false;
+                }
+            }
+            if(is_inner){
+                expand_data.inner_ids.emplace_back(kv.first);
+            }
+            else{
+                expand_data.bound_ids.emplace_back(kv.first);
+            }
         }
 
         // expand_data.print_edge();
@@ -143,7 +165,7 @@ public:
         // }
         // std::cout << std::endl;
 
-        while(!old_q.empty() && step < MAX_HOP){
+        while(!old_q.empty() && step < MAX_HOP && visited_nodes.size() <= MAX_NODE_NUM){
             step++;
             while(!old_q.empty()){
                 vertex_t q = old_q.front();
@@ -151,7 +173,7 @@ public:
                 old_q.pop();
                 for(auto edge: nodes[q].out_adj){
                     vertex_t u = edge.first;
-                    if(Fc[u] != u) continue;  // 已经位于其他结构中了
+                    if(Fc[u] != Fc_default_value) continue;  // 已经位于其他结构中了
                     nodes[u].tag = s;
                     if (visited_nodes.find(u) == visited_nodes.end()){
                         new_q.push(u);
@@ -319,12 +341,13 @@ public:
 
         // build a supernode
         vertex_t supernoed_id = supernodes_num;
+        Fc_map[source] = supernoed_id;
         // expand_data[supernoed_id].id = supernoed_id;
         expand_data[supernoed_id].id = source;
-        expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), visited_nodes.begin(), visited_nodes.end());
+        // expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), visited_nodes.begin(), visited_nodes.end());
         supernodes_num++;
         // 利用Dijkstra求最短路径
-        Dijkstra(expand_data[supernoed_id], source);
+        Dijkstra(expand_data[supernoed_id], source, visited_nodes);
     }
 
     void write_supernode(const std::string &efile){
@@ -334,12 +357,20 @@ public:
             exit(0);
         }
         for(vertex_t i = 0; i < supernodes_num; i++){
-            outfile << getOriginId(expand_data[i].id) << ":\nids(" << expand_data[i].ids.size() << "): ";
-            for(auto id : expand_data[i].ids){
+            outfile << getOriginId(expand_data[i].id) << ":\ninner_ids(" << expand_data[i].inner_ids.size() << "): ";
+            for(auto id : expand_data[i].inner_ids){
                 outfile << getOriginId(id) << ", ";
             }
-            outfile << "\nedges(" << expand_data[i].edges.size() << "):\n";
-            for(auto edge : expand_data[i].edges){
+            outfile << "\nbound_ids(" << expand_data[i].bound_ids.size() << "): ";
+            for(auto id : expand_data[i].bound_ids){
+                outfile << getOriginId(id) << ", ";
+            }
+            outfile << "\ninner_edges(" << expand_data[i].inner_edges.size() << "):\n";
+            for(auto edge : expand_data[i].inner_edges){
+                outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
+            }
+            outfile << "\nbound_edges(" << expand_data[i].bound_edges.size() << "):\n";
+            for(auto edge : expand_data[i].bound_edges){
                 outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
             }
         }
@@ -348,12 +379,12 @@ public:
     void start_find(){
         // init Fc
         Fc = new vertex_t[nodes_num+1];
-        for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = i;
+        for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
         // init expand_data
         expand_data = new ExpandData<vertex_t, value_t>[nodes_num/MIN_NODE_NUM];
 
         for(vertex_t i = 0; i < nodes_num; i++){
-            if(Fc[i] != i) continue;
+            if(Fc[i] != Fc_default_value) continue;
             vertex_t source = i; // 指定一个源点
             bool rt = first_phase(source);
             if(!rt) continue;
@@ -362,17 +393,32 @@ public:
             if(i % 10000 == 0){
                std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
-            // break;
         }
 
-        vertex_t supernodes_comtain_num = 0;
+        // 统计
+        vertex_t supernodes_inner_num = 0;
+        vertex_t supernodes_bound_num = 0;
         for(vertex_t i = 0; i < supernodes_num; i++){
-            supernodes_comtain_num += expand_data[i].ids.size();
+            supernodes_inner_num += expand_data[i].inner_ids.size();
+            supernodes_bound_num +=  expand_data[i].bound_ids.size();
         }
+        vertex_t supernodes_comtain_num = supernodes_inner_num + supernodes_bound_num;
+
+        // 测试
+        // vertex_t ordinary_num = 0;
+        // for(vertex_t i = 0; i < nodes_num; i++){
+        //     if(Fc[i] == Fc_default_value){
+        //         ordinary_num++;
+        //     }
+        // }
 
         std::cout << "nodes_num=" << nodes_num << " supernodes_num=" << supernodes_num << std::endl; 
         std::cout << "supernodes_comtain_num=" << supernodes_comtain_num  << std::endl; 
+        std::cout << "supernodes_inner_num=" << supernodes_inner_num  << std::endl; 
+        std::cout << "supernodes_bound_num=" << supernodes_bound_num  << std::endl; 
         std::cout << "supernodes_comtain_num/nodes_num=" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
+        // std::cout << "ordinary_num=" << ordinary_num  << std::endl; 
+        // std::cout << "ordinary_num+supernodes_comtain_num=" << (ordinary_num+supernodes_comtain_num)  << std::endl; 
 
         return ;
 
@@ -472,9 +518,16 @@ public:
         return vertex_map[oldid];
     }
 
+    ~FindPatternForSSSP(){
+        delete[] nodes;
+        delete[] Fc;
+        delete[] expand_data;
+    }
+
 public:
     unordered_map<int, int> vertex_map; //原id: 新id
     unordered_map<int, int> vertex_reverse_map; // 新id: 原id
+    unordered_map<int, int> Fc_map; // id: superid
     Node<vertex_t, value_t> *nodes;
     vertex_t nodes_num=0;
     vertex_t supernodes_num=0;
@@ -483,6 +536,7 @@ public:
     vertex_t MIN_NODE_NUM=4;   // 结构内包含的最小顶点数量
     vertex_t *Fc; // fc[x]=s, s->x
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
+    const int Fc_default_value = -1; // Fc[]的默认值
 };  
 
 // int main(int argc,char *argv[]) {
