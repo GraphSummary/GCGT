@@ -53,7 +53,7 @@ echo -e "原图计算完成...\n"
 echo -e "计算结果比较完成...\n"
 
 # 写入excel
-/usr/bin/python3 ./tools/result_analysis.py
+/usr/bin/python3 ./tools/result_analysis.py ${destdir} ./out/result_analyse
 echo -e "统计结果写入excel...\n"
 
 # # clean
