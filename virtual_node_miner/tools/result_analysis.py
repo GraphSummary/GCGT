@@ -6,6 +6,7 @@
 '''
 import re
 import pandas as pd
+import sys
 
 def readFile(path):
     with open(path, 'r+', encoding="utf-8") as f:
@@ -37,8 +38,16 @@ def mergeFile(filestr, savepath):
     df.to_csv(savepath + '.csv')
 
 if __name__ == "__main__":
-    filepath = '././out/result.txt'
-    savepath = '././out/result_analyse'
+    # 运行格式： python3 ./result_analysis.py ../out/traversal_result_analyse.txt ../out/traversal_result_analyse
+
+    filepath = sys.argv[1].strip(' ')
+    savepath = sys.argv[2].strip(' ')
+    print('参数列表:', str(sys.argv))
+    print('path1:', filepath)
+    print('path2:', savepath)
+
+    # filepath = '././out/result_analyse.txt'
+    # savepath = '././out/result_analyse'
     f = readFile(filepath)
 
     # 合并文件
