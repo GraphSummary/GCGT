@@ -84,9 +84,10 @@ public:
         std::cout << "load finied, nodes_num=" << nodes_num << " edges_num=" << edges.size() << std::endl;
     }
 
-    void Dijkstra(ExpandData<vertex_t, value_t> &expand_data, const vertex_t source, std::vector<vertex_t> &node_set){
+    void Dijkstra(ExpandData<vertex_t, value_t> &expand_data){
         // std::cout << "Dijkstra ..." << std::endl;
-        // std::vector<vertex_t> node_set = expand_data.ids; 
+        std::vector<vertex_t> &node_set = expand_data.ids; 
+        const vertex_t source = expand_data.id;
         unordered_map<vertex_t, value_t> dist_map;
         unordered_map<vertex_t, bool> visited;
         for(auto u : node_set){
@@ -125,12 +126,19 @@ public:
             // std::cout << "--" << kv.first << ": " << kv.second << std::endl;
         }
         // 为结构加入直接指向外部点的最短距离边： source -> 外部id
+        unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
         for(auto kv : dist_map){
             bool is_inner = true;
             for(auto edge : nodes[kv.first].out_adj){
                 if(Fc[edge.first] != source){  // 可能会出现发给同一个点
                     // s -> 外部点
-                    expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(edge.first, kv.second + edge.second));
+                    // expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(edge.first, kv.second + edge.second));
+                    if(bound_map.find(edge.first) == bound_map.end()){
+                        bound_map[edge.first] = kv.second + edge.second;
+                    }
+                    else{
+                        bound_map[edge.first] = std::min(bound_map[edge.first], kv.second + edge.second);
+                    }
                     is_inner = false;
                 }
             }
@@ -141,7 +149,11 @@ public:
                 expand_data.bound_ids.emplace_back(kv.first);
             }
         }
-
+        for(auto kv : bound_map){
+            expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second));
+        }
+        // node_set没必要存储，故清空
+        node_set.clear();
         // expand_data.print_edge();
     }
 
@@ -342,12 +354,11 @@ public:
         // build a supernode
         vertex_t supernoed_id = supernodes_num;
         Fc_map[source] = supernoed_id;
-        // expand_data[supernoed_id].id = supernoed_id;
         expand_data[supernoed_id].id = source;
-        // expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), visited_nodes.begin(), visited_nodes.end());
+        expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), visited_nodes.begin(), visited_nodes.end());
         supernodes_num++;
-        // 利用Dijkstra求最短路径
-        Dijkstra(expand_data[supernoed_id], source, visited_nodes);
+        // // 利用Dijkstra求最短路径
+        // Dijkstra(expand_data[supernoed_id]);
     }
 
     void write_supernode(const std::string &efile){
@@ -357,7 +368,7 @@ public:
             exit(0);
         }
         for(vertex_t i = 0; i < supernodes_num; i++){
-            outfile << getOriginId(expand_data[i].id) << ":\ninner_ids(" << expand_data[i].inner_ids.size() << "): ";
+            outfile << getOriginId(expand_data[i].id) << ":inner_ids(" << expand_data[i].inner_ids.size() << "): ";
             for(auto id : expand_data[i].inner_ids){
                 outfile << getOriginId(id) << ", ";
             }
@@ -369,7 +380,7 @@ public:
             for(auto edge : expand_data[i].inner_edges){
                 outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
             }
-            outfile << "\nbound_edges(" << expand_data[i].bound_edges.size() << "):\n";
+            outfile << "bound_edges(" << expand_data[i].bound_edges.size() << "):\n";
             for(auto edge : expand_data[i].bound_edges){
                 outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
             }
@@ -394,6 +405,13 @@ public:
                std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
         }
+        // 为每个结构计算内部最短路径
+#pragma omp parallel for
+        for(vertex_t i = 0; i < supernodes_num; i++){
+            // 利用Dijkstra求最短路径
+            Dijkstra(expand_data[i]);
+        }
+#pragma omp barrier
 
         // 统计
         vertex_t supernodes_inner_num = 0;
@@ -417,97 +435,6 @@ public:
         std::cout << "supernodes_inner_num=" << supernodes_inner_num  << std::endl; 
         std::cout << "supernodes_bound_num=" << supernodes_bound_num  << std::endl; 
         std::cout << "supernodes_comtain_num/nodes_num=" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
-        // std::cout << "ordinary_num=" << ordinary_num  << std::endl; 
-        // std::cout << "ordinary_num+supernodes_comtain_num=" << (ordinary_num+supernodes_comtain_num)  << std::endl; 
-
-        return ;
-
-/*
-        vertex_t s = 0; // 指定一个源点
-        nodes[s].tag = 1;
-        std::queue<vertex_t> old_q;
-        std::queue<vertex_t> new_q;
-        int step = 0;
-        bool *visited_nodes = new bool[nodes_num];
-        bool *in_queue_nodes = new bool[nodes_num];
-
-        for(auto u : nodes[s].out_adj){
-            nodes[u].tag = 1;
-            old_q.push(u);
-            in_queue_nodes[u] = 1;
-            visited_nodes[u] = 1;
-        }
-        // for(int i = 0; i < nodes_num; i++){
-        //     std::cout << visited_nodes[i] << " ";
-        // }
-        // for(int i = 0; i < nodes_num; i++){
-        //     std::cout << nodes[i].id << ":\nin:";
-        //     for(auto in : nodes[i].in_adj){
-        //         std::cout << nodes[in].id << ",";
-        //     }
-        //     std::cout << "\nout:";
-        //     for(auto in : nodes[i].out_adj){
-        //         std::cout << nodes[in].id << ",";
-        //     }
-        //     std::cout << std::endl;
-        // }
-        // std::cout << std::endl;
-        while(!old_q.empty()){
-            step++;
-            while(!old_q.empty()){
-                vertex_t q = old_q.front();
-                std::cout << nodes[q].id << ",";
-                old_q.pop();
-                in_queue_nodes[q] = 0;
-                // pull 入邻居的tag确定自己的tag
-                value_t tag = 1;
-                for(auto u : nodes[q].in_adj){
-                    tag &= nodes[u].tag;
-                    if(tag != 1){
-                        break;
-                    }
-                }
-                nodes[q].tag = tag;
-                if(tag == 1){
-                    for(auto u: nodes[q].out_adj){
-                        nodes[u].tag = 1;
-                        if (in_queue_nodes[u] == 0 && visited_nodes[u] == 0){
-                            new_q.push(u);
-                            in_queue_nodes[u] = 1;
-                            visited_nodes[u] = 1;
-                        }
-                    } 
-                }
-                else{
-                    for(auto u : nodes[q].out_adj){
-                        Node<vertex_t, value_t> &node = nodes[u];
-                        if(node.tag == 1){
-                            node.tag = 0;
-                            if (in_queue_nodes[u] == 0){ // 这种情况，只需要不再队列中都需要加入队列
-                                new_q.push(u);
-                                in_queue_nodes[u] = 1;
-                                visited_nodes[u] = 1;
-                            }
-                        }
-                    }
-                }
-            }
-            std::cout << "step=" << step << std::endl;
-            old_q.swap(new_q);
-            std::queue<vertex_t> empty;
-            new_q.swap(empty);
-
-            for(vertex_t i = 0; i < nodes_num; i++){
-                Node<vertex_t, value_t> &node = nodes[i];
-                std::cout << node.id << ":" << node.tag << ", ";
-            }
-            std::cout << std::endl;
-            if(step > 6){
-                break;
-            }
-        }
-    */
-        
     }
 
     vertex_t getOriginId(const vertex_t newid){
