@@ -85,10 +85,10 @@ static void timer_end(bool iswrite = false, std::string appname="", std::string 
           std::string& name = timers[i].first;
           double time = timers[i + 1].second - timers[i].second;
 
-          fout << appname << "_" << name << ":" << time << " sec" << std::endl;
+          fout << appname << "_" << name << ":" << time << std::endl;
         }
         if(timers.size() >= 1){
-          fout << appname << "_all time:" << timers[timers.size() - 1].second - timers[0].second << " sec" << std::endl;
+          fout << appname << "_all_time:" << timers[timers.size() - 1].second - timers[0].second << std::endl;
         }
         fout.close();
     }
