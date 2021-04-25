@@ -13,4 +13,21 @@ public:
         weight = w;
     }
 };
+
+template<class vertex_t, class value_t>
+class UpdateEdge
+{
+public:
+    char type;  // a or d
+    vertex_t source;
+    vertex_t destination;
+    value_t weight;
+    UpdateEdge(char t, vertex_t s, vertex_t d, value_t w){
+        type = t;
+        source = s;
+        destination = d;
+        weight = w;
+    }
+};
+
 #endif  // GRAPH_EDGE_H_
