@@ -28,6 +28,18 @@ using std::ofstream;
 
 #define MAX_DIST 0xffff
 
+// Functor
+template<class vertex_t>
+class isEqualALL {
+public:
+    explicit isEqualALL(vertex_t node) : node(node) {}
+    bool operator() (const std::pair<int, int>& element) const {
+        return element.first == node;
+    }
+private:
+    const int node;
+};
+
 template<class vertex_t, class value_t>
 class FindPatternForSSSP{
 public:
@@ -37,7 +49,7 @@ public:
            std::cout << "open file failed. " << efile <<std::endl;
             exit(0);
         }
-       std::cout << "finish read file... " << efile <<std::endl;
+        std::cout << "finish read file... " << efile <<std::endl;
         vertex_t u, v;
         value_t w;
         std::vector<Edge<vertex_t, value_t>> edges;
@@ -51,6 +63,7 @@ public:
             edges.emplace_back(Edge<vertex_t, value_t>(u, v, w));
         }
 
+        edges_num = edges.size();
         nodes = new Node<vertex_t, value_t>[max_id+1]; 
 
         for (auto edge : edges) {
@@ -84,8 +97,38 @@ public:
         std::cout << "load finied, nodes_num=" << nodes_num << " edges_num=" << edges.size() << std::endl;
     }
 
+    void load_update(const std::string &efile){
+        std::ifstream inFile(efile);
+        if(!inFile){
+           std::cout << "open file failed. " << efile <<std::endl;
+            exit(0);
+        }
+        std::cout << "finish read file... " << efile <<std::endl;
+        vertex_t u, v;
+        value_t w;
+        char t;
+        std::vector<Edge<vertex_t, value_t>> edges;
+        vertex_t update_num = 0;
+        while (inFile >> t >> u >> v >> w) {
+            assert(t == 'a' || t == 'd');
+            assert(u >= 0);
+            assert(v >= 0);
+            assert(w >= 0);
+            v = vertex_map[v];
+            u = vertex_map[u];
+            update_edges.emplace_back(UpdateEdge<vertex_t, value_t>(t, u, v, w));
+            update_num++;
+        }
+        std::cout << "update_num=" << update_num << std::endl;
+    }
+
     void Dijkstra(ExpandData<vertex_t, value_t> &expand_data){
         // std::cout << "Dijkstra ..." << std::endl;
+        // init
+        // expand_data.inner_ids.clear();
+        // expand_data.bound_ids.clear();
+        expand_data.inner_edges.clear();
+        expand_data.bound_edges.clear();
         std::vector<vertex_t> &node_set = expand_data.ids; 
         const vertex_t source = expand_data.id;
         unordered_map<vertex_t, value_t> dist_map;
@@ -142,18 +185,18 @@ public:
                     is_inner = false;
                 }
             }
-            if(is_inner){
-                expand_data.inner_ids.emplace_back(kv.first);
-            }
-            else{
-                expand_data.bound_ids.emplace_back(kv.first);
-            }
+            // if(is_inner){
+                // expand_data.inner_ids.emplace_back(kv.first);
+            // }
+            // else{
+            //     expand_data.bound_ids.emplace_back(kv.first);
+            // }
         }
         for(auto kv : bound_map){
             expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second));
         }
         // node_set没必要存储，故清空
-        node_set.clear();
+        // node_set.clear();
         // expand_data.print_edge();
     }
 
@@ -368,12 +411,17 @@ public:
             exit(0);
         }
         for(vertex_t i = 0; i < supernodes_num; i++){
-            outfile << getOriginId(expand_data[i].id) << ":inner_ids(" << expand_data[i].inner_ids.size() << "): ";
-            for(auto id : expand_data[i].inner_ids){
-                outfile << getOriginId(id) << ", ";
-            }
-            outfile << "\nbound_ids(" << expand_data[i].bound_ids.size() << "): ";
-            for(auto id : expand_data[i].bound_ids){
+            // outfile << getOriginId(expand_data[i].id) << ":inner_ids(" << expand_data[i].inner_ids.size() << "): ";
+            outfile << getOriginId(expand_data[i].id) << ":ids(" << expand_data[i].ids.size() << "): ";
+            // for(auto id : expand_data[i].inner_ids){
+            //     outfile << getOriginId(id) << ", ";
+            // }
+            // outfile << "\nbound_ids(" << expand_data[i].bound_ids.size() << "): ";
+            // for(auto id : expand_data[i].bound_ids){
+            //     outfile << getOriginId(id) << ", ";
+            // }
+            outfile << "\nids(" << expand_data[i].ids.size() << "): ";
+            for(auto id : expand_data[i].ids){
                 outfile << getOriginId(id) << ", ";
             }
             outfile << "\ninner_edges(" << expand_data[i].inner_edges.size() << "):\n";
@@ -387,7 +435,7 @@ public:
         }
     }
 
-    void start_find(){
+    void start_find(const std::string &result_analyse_file=""){
         // init Fc
         Fc = new vertex_t[nodes_num+1];
         for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
@@ -414,13 +462,15 @@ public:
 #pragma omp barrier
 
         // 统计
-        vertex_t supernodes_inner_num = 0;
-        vertex_t supernodes_bound_num = 0;
+        vertex_t inner_edges_num = 0;
+        vertex_t bound_edges_num = 0;
+        // vertex_t supernodes_comtain_num = supernodes_inner_num + supernodes_bound_num;
+        vertex_t supernodes_comtain_num = 0;
         for(vertex_t i = 0; i < supernodes_num; i++){
-            supernodes_inner_num += expand_data[i].inner_ids.size();
-            supernodes_bound_num +=  expand_data[i].bound_ids.size();
+            inner_edges_num += expand_data[i].inner_edges.size();
+            bound_edges_num += expand_data[i].bound_edges.size();
+            supernodes_comtain_num += expand_data[i].ids.size();
         }
-        vertex_t supernodes_comtain_num = supernodes_inner_num + supernodes_bound_num;
 
         // 测试
         // vertex_t ordinary_num = 0;
@@ -430,11 +480,26 @@ public:
         //     }
         // }
 
-        std::cout << "nodes_num=" << nodes_num << " supernodes_num=" << supernodes_num << std::endl; 
+        std::cout << "nodes_num=" << nodes_num << std::endl;
+        std::cout << "edges_num=" << edges_num << std::endl;
+        std::cout << "supernodes_num=" << supernodes_num << std::endl; 
         std::cout << "supernodes_comtain_num=" << supernodes_comtain_num  << std::endl; 
-        std::cout << "supernodes_inner_num=" << supernodes_inner_num  << std::endl; 
-        std::cout << "supernodes_bound_num=" << supernodes_bound_num  << std::endl; 
+        std::cout << "inner_edges_num=" << inner_edges_num  << std::endl; 
+        std::cout << "bound_edges_num=" << bound_edges_num  << std::endl; 
         std::cout << "supernodes_comtain_num/nodes_num=" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
+        // 统计结果写入文件
+        ofstream outfile(result_analyse_file, std::ios::app);
+        if(!outfile){
+            std::cout << "[find_pattern_sssp:start_find] open result_analyse_file failed. " << result_analyse_file <<std::endl;
+            exit(0);
+        }
+        outfile << "nodes_num:" << nodes_num << std::endl;
+        outfile << "edges_num:" << edges_num << std::endl;
+        outfile << "supernodes_num:" << supernodes_num << std::endl; 
+        outfile << "supernodes_comtain_num:" << supernodes_comtain_num  << std::endl; 
+        outfile << "inner_edges_num:" << inner_edges_num  << std::endl; 
+        outfile << "bound_edges_num:" << bound_edges_num  << std::endl; 
+        outfile << "supernodes_comtain_num/nodes_num:" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
     }
 
     vertex_t getOriginId(const vertex_t newid){
@@ -445,6 +510,95 @@ public:
         return vertex_map[oldid];
     }
 
+    /**
+     * 根据超点id删除超点，注意并未释放数组中点的空间
+    */
+    void delete_supernode(const vertex_t supernodeid){
+        ExpandData<vertex_t, value_t> &expand_v = expand_data[supernodeid];
+        // clear Fc
+        for(auto u : expand_v.ids){
+            Fc[u] = Fc_default_value;
+        }
+        ExpandData<vertex_t, value_t> &expand_end = expand_data[supernodes_num-1];
+        // updata Fc_map
+        Fc_map[expand_end.id] = supernodeid;
+        Fc_map[expand_v.id] = Fc_map_default_value;
+        // clear supernode 
+        expand_v.swap(expand_end);
+        expand_end.clear();
+        supernodes_num--;
+    }
+
+    /*
+        根据更新边还更新图和压缩结构：
+        注意：更新边不涉及新的顶点
+    */
+    void increment_update(){
+        char type;
+        vertex_t u, v;
+        value_t w;
+        for(auto edge : update_edges){
+            type = edge.type;
+            u = edge.source;
+            v = edge.destination;
+            w = edge.weight;
+            std::cout << "update: " << type << " " << u << "->" << v << " " << w << std::endl;
+            if(type == 'a'){
+                // + edge(u, v)
+                nodes[u].out_adj.emplace_back(std::pair<vertex_t, value_t>(v, w));
+                nodes[v].in_adj.emplace_back(std::pair<vertex_t, value_t>(u, w));
+                // 1. u is a innner node
+                if(Fc[u] != Fc_default_value){
+                    ExpandData<vertex_t, value_t> &expand = expand_data[Fc_map[Fc[u]]];
+                    // 1.1 inner id -> same inner id
+                    if(Fc[v] == Fc[u]){
+                        Dijkstra(expand);
+                    }
+                    // 1.2/1.4 inner id -> out id or supernode' s
+                    // else if(Fc[v] == Fc_default_value or expand_data[Fc_map[Fc[v]]].id == v){
+                    else{
+                        // s->u: dist(u)
+                        auto it = std::find_if(expand.inner_edges.begin(), expand.inner_edges.end(), isEqualALL<vertex_t>(u));
+                        std::cout << "it=" << it->first << " " << it->second << std::endl;
+                        if(it != expand.inner_edges.end()){
+                            // u is boundnode
+                            auto it_v = std::find_if(expand.bound_edges.begin(), expand.bound_edges.end(), isEqualALL<vertex_t>(v));
+                            if(it_v != expand.bound_edges.end()){
+                                it_v->second = std::min(it_v->second, it->second + w);
+                                std::cout << "--" << it_v->second << " " << (it->second + w) << std::endl;
+                            }
+                            else{
+                                expand.bound_edges.emplace_back(v, it->second + w);
+                                 std::cout << "==" << v << " " << (it->second + w) << std::endl;
+                            }
+                        }
+                        else{
+                            std::cout << "error.... u not in inner_edges" << std::endl;
+                            exit(0);
+                        }
+                    }
+                    // 1.3: inner id -> other inner id, decompress Fc[v]
+                    if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
+                        std::cout << "case: 1.3" << std::endl;
+                        delete_supernode(Fc_map[Fc[v]]);
+                    }
+                }
+                // 2. u is a out node
+                else{
+                    // 2.2 out node -> inner node
+                    if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
+                        std::cout << "case: 2.2" << std::endl;
+                        delete_supernode(Fc_map[Fc[v]]);
+                    }
+                }
+            }
+            else{
+                // - edge(u, v)
+                
+            }
+        }
+    }
+
     ~FindPatternForSSSP(){
         delete[] nodes;
         delete[] Fc;
@@ -452,11 +606,12 @@ public:
     }
 
 public:
-    unordered_map<int, int> vertex_map; //原id: 新id
-    unordered_map<int, int> vertex_reverse_map; // 新id: 原id
-    unordered_map<int, int> Fc_map; // id: superid
+    unordered_map<vertex_t, vertex_t> vertex_map; //原id: 新id
+    unordered_map<vertex_t, vertex_t> vertex_reverse_map; // 新id: 原id
+    unordered_map<vertex_t, vertex_t> Fc_map; // id: superid
     Node<vertex_t, value_t> *nodes;
     vertex_t nodes_num=0;
+    vertex_t edges_num=0;
     vertex_t supernodes_num=0;
     vertex_t MAX_HOP=4; // 查找的跳数
     vertex_t MAX_NODE_NUM=100; // 结构内包含的最大顶点数量
@@ -464,6 +619,8 @@ public:
     vertex_t *Fc; // fc[x]=s, s->x
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
     const int Fc_default_value = -1; // Fc[]的默认值
+    const int Fc_map_default_value = -1; // Fc_map的默认值
+    std::vector<UpdateEdge<vertex_t, value_t>> update_edges; // 存储更新的边
 };  
 
 // int main(int argc,char *argv[]) {
