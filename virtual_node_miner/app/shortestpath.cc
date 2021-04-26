@@ -1,17 +1,17 @@
-#include "IterateKernel.cc"
+#ifndef APP_SHORTESTPATH_ITERATEKERNEL_H_
+#define APP_SHORTESTPATH_ITERATEKERNEL_H_
 
+#include "IterateKernel.cc"
+#include "../worker/flags.h"
 
 // DECLARE_string(result_dir);
 // DEFINE_int64(num_nodes);
 // DECLARE_double(portion);
-DEFINE_int64(shortestpath_source, 0, "source");
 
 template<class vertex_t, class value_t>
 struct ShortestpathIterateKernel : public IterateKernel<vertex_t, value_t, std::vector<std::pair<vertex_t, value_t>> > {
     value_t imax;
     value_t zero;
-    unsigned long long int g_cnt = 0;
-    unsigned long long int f_cnt = 0;
 
     ShortestpathIterateKernel (): zero(0){
         imax = std::numeric_limits<value_t>::max();
@@ -24,13 +24,21 @@ struct ShortestpathIterateKernel : public IterateKernel<vertex_t, value_t, std::
             delta = imax;
         }
     }
+    // 用于sssp类超点内部初始化
+    void init_c(const vertex_t& k, value_t& delta, std::vector<std::pair<vertex_t, value_t>>& data, const vertex_t& source){
+        if(k == source){
+            delta = 0;
+        }else{
+            delta = imax;
+        }
+    }
     void init_v(const vertex_t& k,value_t& v,std::vector<std::pair<vertex_t, value_t>>& data){
         v = imax;  
     }
         
     void accumulate(value_t& a, const value_t& b){
         a = std::min(a, b); 
-        g_cnt++;
+        this->g_cnt++;
     }
 
     void priority(value_t& pri, const value_t& value, const value_t& delta){
@@ -39,7 +47,7 @@ struct ShortestpathIterateKernel : public IterateKernel<vertex_t, value_t, std::
 
     void g_func(const value_t& delta, const value_t& value, value_t& data){
         data = delta + value;
-        f_cnt++;
+        this->f_cnt++;
     }
 
     void g_func(const vertex_t &k, const value_t& delta,const value_t& value, const std::vector<std::pair<vertex_t, value_t>>& data, std::vector<std::pair<vertex_t, value_t> >* output){
@@ -60,4 +68,4 @@ struct ShortestpathIterateKernel : public IterateKernel<vertex_t, value_t, std::
     
 };
 
-
+#endif  // APP_SHORTESTPATH_ITERATEKERNEL_H_
