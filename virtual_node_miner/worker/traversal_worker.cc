@@ -149,7 +149,7 @@ public:
                     if (word & 1) {
                         Node<vertex_t, value_t>& node = nodes[v];
                         // if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
-                        if(node.oldDelta < itrative_threshold){
+                        if(node.oldDelta < itrative_threshold){  // 注意这个是针对sssp写的
                             for(auto edge : node.out_adj){ // i -> adj
                                 value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
                                 value_t sendDelta; // i's 

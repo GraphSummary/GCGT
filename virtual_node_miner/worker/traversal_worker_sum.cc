@@ -21,7 +21,7 @@
 #include "../graph/node.h"
 #include "../graph/edge.h"
 #include "./flags.h"
-#include "../tools/find_pattern_sssp.h"
+#include "../tools/find_pattern.h"
 #include "../utils/bitset.h"
 
 using std::vector;
@@ -32,11 +32,11 @@ using std::ofstream;
 using grape::Bitset;
 
 template<class vertex_t, class value_t>
-class TraversalWorkerSum: public FindPatternForSSSP<vertex_t, value_t>
+class TraversalWorkerSum: public FindPattern<vertex_t, value_t>
 {
 public:
     TraversalWorkerSum(){
-        app_ = new ShortestpathIterateKernel<vertex_t, value_t>();
+        this->app_ = new ShortestpathIterateKernel<vertex_t, value_t>();
     }
 
     void print_result(){
@@ -51,9 +51,9 @@ public:
         value_t value;
         vector<std::pair<vertex_t, value_t>> data;
         for(vertex_t i = 0; i < this->nodes_num; i++){
-            app_->init_c(this->vertex_reverse_map[i], this->nodes[i].recvDelta, data);
-            this->nodes[i].oldDelta = app_->default_v();
-            app_->init_v(i, this->nodes[i].value, data);
+            this->app_->init_c(this->vertex_reverse_map[i], this->nodes[i].recvDelta, data);
+            this->nodes[i].oldDelta = this->app_->default_v();
+            this->app_->init_v(i, this->nodes[i].value, data);
         }
     }
 
@@ -106,8 +106,8 @@ public:
                         // if(this->Fc[i] != this->Fc_default_value){ // 测试：仅仅用来统计内点次数; 这个调式耗时2s
                         //     contain_cnt++;
                         // }
-                        // if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v() || this->Fc[i] != this->Fc_default_value){
-                        if(node.oldDelta < itrative_threshold && node.oldDelta != app_->default_v()){
+                        // if(node.oldDelta > itrative_threshold || node.oldDelta == this->app_->default_v() || this->Fc[i] != this->Fc_default_value){
+                        if(node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
                             if(this->Fc[i] == i){
                                 // 超点send
                                 ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
@@ -116,22 +116,22 @@ public:
                                 for(auto& edge : supernode.bound_edges){ // i -> adj
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
-                                    app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                                    this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
-                                node.oldDelta = app_->default_v(); // delta发完需要清空
+                                node.oldDelta = this->app_->default_v(); // delta发完需要清空
                             }
                             else if(this->Fc[i] == this->Fc_default_value){
                                 // 普通点send
                                 for(auto& edge : node.out_adj){ // i -> adj
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
-                                    app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                                    this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     node_send_cnt++;
                                 }
-                                node.oldDelta = app_->default_v(); // delta发完需要清空
+                                node.oldDelta = this->app_->default_v(); // delta发完需要清空
                             }
                         }
                     }
@@ -143,33 +143,33 @@ public:
             // for(vertex_t i = 0; i < this->supernodes_num; i++){
             //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
             //     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-            //     if(node.oldDelta > itrative_threshold || node.oldDelta == app_->default_v()){
+            //     if(node.oldDelta > itrative_threshold || node.oldDelta == this->app_->default_v()){
             //         continue;
             //     }
             //     for(auto& edge : supernode.edges){ // i -> adj
             //         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
             //         value_t sendDelta; // i's 
-            //         app_->g_func(node.oldDelta, edge.second, sendDelta);
-            //         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+            //         this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+            //         this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
             //         super_send_cnt++;
             //     }
-            //     node.oldDelta = app_->default_v();
+            //     node.oldDelta = this->app_->default_v();
             // }
 
             // receive
             for(vertex_t i = 0; i < this->nodes_num; i++){
                 Node<vertex_t, value_t>& node = this->nodes[i];
                 value_t old_value = node.value;
-                app_->accumulate(node.value, node.recvDelta); // delat -> value
+                this->app_->accumulate(node.value, node.recvDelta); // delat -> value
                 // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
                 if(old_value != node.value){
                     is_convergence = false;
-                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                    this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 }
-                if(node.oldDelta != app_->default_v() && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){ // 需要单独判断这个点是否时活跃点, 同时内部点不需要发消息，默认为非活跃
+                if(node.oldDelta != this->app_->default_v() && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){ // 需要单独判断这个点是否时活跃点, 同时内部点不需要发消息，默认为非活跃
                     next_modified_.set_bit(i - begin);
                 }
-                node.recvDelta = app_->default_v();
+                node.recvDelta = this->app_->default_v();
             }
             // print_result();
             step++;
@@ -191,14 +191,14 @@ public:
                 for(vertex_t i = 0; i < this->supernodes_num; i++){
                     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
                     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                    if(node.value == app_->default_v()){
+                    if(node.value == this->app_->default_v()){
                         continue;
                     }
                     for(auto& edge : supernode.inner_edges){ // i -> adj
                         value_t& value = this->nodes[edge.first].value; // adj's value
                         value_t sendDelta; // i's 
-                        app_->g_func(node.value, edge.second, sendDelta);
-                        app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
+                        this->app_->g_func(node.value, edge.second, sendDelta);
+                        this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                         super_send_cnt++;
                     }
                 }
@@ -206,34 +206,33 @@ public:
             }
         } 
 
-        LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << app_->g_cnt << " f_cnt=" << app_->f_cnt;
+        LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << this->app_->g_cnt << " f_cnt=" << this->app_->f_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
         // 统计结果写入文件：
         ofstream fout(FLAGS_result_analyse, std::ios::app);
         fout << "TraversalWorkerSum_step:" << step << "\n";
         fout << "TraversalWorkerSum_threshold_change_cnt:" << threshold_change_cnt << "\n";
-        fout << "TraversalWorkerSum_g_cnt:" << app_->g_cnt << "\n";
-        fout << "TraversalWorkerSum_f_cnt:" << app_->f_cnt << "\n";
+        fout << "TraversalWorkerSum_g_cnt:" << this->app_->g_cnt << "\n";
+        fout << "TraversalWorkerSum_f_cnt:" << this->app_->f_cnt << "\n";
         fout << "TraversalWorkerSum_node_send_cnt:" << node_send_cnt << "\n";
         fout << "TraversalWorkerSum_super_send_cnt:" << super_send_cnt << "\n";
         fout.close();
     }
 
     ~TraversalWorkerSum(){
-        delete app_;
     }
 
 protected:
-    ShortestpathIterateKernel<vertex_t, value_t> *app_;
+    
 
 };
 
 
 int main(int argc,char **argv) {
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=./out/sssp_result_analys
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result_sum  -delta_step_threshold=3
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3
-    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_0_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=./out/sssp__result_analyse
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=../out/sssp_result_analyse
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result_sum  -delta_step_threshold=3  -result_analyse=../out/sssp_result_analyse
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3  -result_analyse=../out/sssp_result_analyse
+    // g++ traversal_worker_sum.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_0_base.e -shortestpath_source=0 -output=../out/sssp_result_sum -delta_step_threshold=3 -result_analyse=../out/sssp__result_analyse
 
     google::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
@@ -247,7 +246,8 @@ int main(int argc,char **argv) {
     timer_next("load_graph");
     worker.load(base_edge);
     timer_next("find_pattern");
-    worker.start_find();
+    worker.start_find(FLAGS_result_analyse);
+    // return 0; // 测试
     // timer_next("write_pattern");
     // worker.write_supernode("./out/a_pattern");
     timer_next("compute");
