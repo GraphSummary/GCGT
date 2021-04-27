@@ -140,22 +140,6 @@ public:
                     word = word >> 1;
                 }
             }
-            // 超点send
-            // for(vertex_t i = 0; i < this->supernodes_num; i++){
-            //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
-            //     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-            //     if(node.oldDelta > itrative_threshold || node.oldDelta == this->app_->default_v()){
-            //         continue;
-            //     }
-            //     for(auto& edge : supernode.edges){ // i -> adj
-            //         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-            //         value_t sendDelta; // i's 
-            //         this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-            //         this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-            //         super_send_cnt++;
-            //     }
-            //     node.oldDelta = this->app_->default_v();
-            // }
 
             // receive
             for(vertex_t i = 0; i < this->nodes_num; i++){
@@ -188,7 +172,7 @@ public:
             }
 
             if(is_convergence || step > FLAGS_max_iterater_num){
-                // 结果内不点值分配-超点send -> inner_edges
+                // supernode内值分配-超点send -> inner_edges
                 for(vertex_t i = 0; i < this->supernodes_num; i++){
                     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
                     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
