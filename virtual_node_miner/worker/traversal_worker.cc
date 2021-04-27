@@ -17,7 +17,7 @@
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include "../app/shortestpath.cc"
+#include "../app/shortestpath.h"
 #include "../graph/node.h"
 #include "../graph/edge.h"
 #include "./flags.h"
@@ -153,7 +153,8 @@ public:
                             for(auto edge : node.out_adj){ // i -> adj
                                 value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
                                 value_t sendDelta; // i's 
-                                app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                // app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
                                 app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                 node_send_cnt++;
                             }

@@ -17,7 +17,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include "../utils/timer.h"
-#include "../app/shortestpath.cc"
+#include "../app/shortestpath.h"
 #include "../graph/node.h"
 #include "../graph/edge.h"
 #include "./flags.h"
@@ -116,7 +116,8 @@ public:
                                 for(auto& edge : supernode.bound_edges){ // i -> adj
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
-                                    this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -127,7 +128,8 @@ public:
                                 for(auto& edge : node.out_adj){ // i -> adj
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
-                                    this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     node_send_cnt++;
                                 }
@@ -197,7 +199,8 @@ public:
                     for(auto& edge : supernode.inner_edges){ // i -> adj
                         value_t& value = this->nodes[edge.first].value; // adj's value
                         value_t sendDelta; // i's 
-                        this->app_->g_func(node.value, edge.second, sendDelta);
+                        // this->app_->g_func(node.value, edge.second, sendDelta);
+                        this->app_->g_func(node.id, node.value, node.value, edge, sendDelta);
                         this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                         super_send_cnt++;
                     }
