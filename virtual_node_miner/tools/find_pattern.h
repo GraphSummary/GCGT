@@ -19,7 +19,7 @@
 #include <memory.h>
 #include "../graph/node.h"
 #include "../graph/edge.h"
-#include "../app/IterateKernel.cc"
+#include "../app/IterateKernel.h"
 #include "../worker/flags.h"
 
 using std::vector;
@@ -207,15 +207,56 @@ public:
         value_t delta;
         value_t value;
         vector<std::pair<vertex_t, value_t>> data;
-        vertex_t old_source = FLAGS_shortestpath_source;
         for(auto i : node_set){
-            app_->init_c(i, nodes[i].recvDelta, data, source);
+            app_->init_c(i, nodes[i].recvDelta, data, source); // 注意：vertex_reverse_map[source]： sssp
             this->nodes[i].oldDelta = app_->default_v();
             app_->init_v(i, nodes[i].value, data);
         }
     }
 
+    void run_to_convergence(std::vector<vertex_t> &node_set, const vertex_t source){
+        bool is_convergence = false;
+        int step = 0;
+        
+        while(true){
+            step++;
+            is_convergence = true;
+            // send
+            for(auto v : node_set){
+                Node<vertex_t, value_t>& node = nodes[v];
+                if(node.oldDelta != app_->default_v()){
+                    for(auto &edge : node.out_adj){ // i -> adj
+                        if(Fc[edge.first] != source){ // 只发给内部点
+                            continue;
+                        }
+                        value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
+                        value_t sendDelta; // i's 
+                        // app_->g_func(node.oldDelta, edge.second, sendDelta);
+                        app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
+                        app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                    }
+                    node.oldDelta = app_->default_v(); // delta发完需要清空 
+                }
+            }
+            // receive
+            for(auto v : node_set){
+                Node<vertex_t, value_t>& node = nodes[v];
+                value_t old_value = node.value;
+                app_->accumulate(node.value, node.recvDelta); // delat -> value
+                if(old_value != node.value){
+                    is_convergence = false;
+                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delta
+                }
+                node.recvDelta = app_->default_v();
+            }
+            if(is_convergence){
+                break;
+            }
+        }
+    }
+
     /**
+     * min/max
      * 计算超点内部需要的值，以及重新为边界点建立新边
     */
     void init_ExpandData(ExpandData<vertex_t, value_t> &expand_data){
@@ -223,10 +264,6 @@ public:
         const vertex_t source = expand_data.id;
         // init supernode
         init_node(node_set, source);
-        // 测试：
-        // for(auto u : node_set){
-        //     std::cout << nodes[u].id << " " << nodes[u].value << " " << nodes[u].recvDelta << " " << nodes[u].oldDelta << std::endl;
-        // }
        
         /* iterative calculation */
         bool is_convergence = false;
@@ -244,7 +281,8 @@ public:
                         }
                         value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
                         value_t sendDelta; // i's 
-                        app_->g_func(node.oldDelta, edge.second, sendDelta);
+                        // app_->g_func(node.oldDelta, edge.second, sendDelta);
+                        app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
                         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                     }
                     node.oldDelta = app_->default_v(); // delta发完需要清空 
@@ -272,28 +310,23 @@ public:
          **/
         expand_data.inner_edges.clear();
         expand_data.bound_edges.clear();
-        // 为结构加入直接指向内部点的最短距离边： source -> 内部id
-        // for(auto u : node_set){
-        //     Node<vertex_t, value_t>& node = nodes[u];
-        //     expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value));  // 可以合到下面的循环里面去
-        //     // std::cout << "id = " << u << ", v = " << node.value << std::endl; 
-        // }
         // 为结构加入直接指向外部点的最短距离边： source -> 外部id
         unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
-        value_t data;
+        value_t sendDelta;
         for(auto u : node_set){
             Node<vertex_t, value_t>& node = nodes[u];
             expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
             for(auto &edge : node.out_adj){
                 if(Fc[edge.first] != source){  // 可能会出现发给同一个点
-                    app_->g_func(node.value, edge.second, data);
+                    // app_->g_func(node.value, edge.second, sendDelta);
+                    app_->g_func(node.id, node.value, node.value, edge, sendDelta);
                     if(bound_map.find(edge.first) == bound_map.end()){
                         // bound_map[edge.first] = node.value + edge.second;
-                        bound_map[edge.first] = data;
+                        bound_map[edge.first] = sendDelta;
                     }
                     else{
                         // bound_map[edge.first] = std::min(bound_map[edge.first], node.value + edge.second);
-                        app_->accumulate(bound_map[edge.first], data);
+                        app_->accumulate(bound_map[edge.first], sendDelta);
                     }
                 }
             }
@@ -302,6 +335,93 @@ public:
             expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second));
         } 
     }
+
+    /**
+     * sum
+     * 计算超点内部需要的值，以及重新为边界点建立新边
+    */
+    void init_ExpandData_iter(ExpandData<vertex_t, value_t> &expand_data){
+        std::vector<vertex_t> &node_set = expand_data.ids; 
+        const vertex_t source = expand_data.id;
+        // init supernode
+        init_node(node_set, source);
+
+        /* first iterative calculation */
+        run_to_convergence(node_set, source);
+
+        /* save old value */
+        // std::vector<value_t> old_value;
+        // old_value.resize(node_set.size());
+        // vertex_t i = 0;
+        // for(auto u : node_set){
+        //     Node<vertex_t, value_t>& node = nodes[u];
+        //     old_value[i++] = node.value;
+        // }
+
+        // /* second iterative calulation: delta_source = 1 */
+        // nodes[source].recvDelta = 1;
+        // run_to_convergence(node_set, source);
+
+        // /* get new weight  */
+        // i = 0;
+        // for(auto u : node_set){
+        //     Node<vertex_t, value_t>& node = nodes[u];
+        //     node.value = node.value - old_value[i++];
+        // }
+
+        /**
+         * create index in supernode 
+         **/
+        expand_data.inner_edges.clear();
+        expand_data.bound_edges.clear();
+        // 为结构加入直接指向外部点的最短距离边： source -> 外部id
+        unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
+        value_t sendDelta;
+        for(auto u : node_set){
+            Node<vertex_t, value_t>& node = nodes[u];
+            expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value / 0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+            for(auto &edge : node.out_adj){
+                if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                    // app_->g_func(node.value, edge.second, sendDelta);
+                    app_->g_func(node.id, node.value, node.value, edge, sendDelta);
+                    if(bound_map.find(edge.first) == bound_map.end()){
+                        // bound_map[edge.first] = node.value + edge.second;
+                        bound_map[edge.first] = sendDelta;
+                    }
+                    else{
+                        // bound_map[edge.first] = std::min(bound_map[edge.first], node.value + edge.second);
+                        app_->accumulate(bound_map[edge.first], sendDelta);
+                    }
+                }
+            }
+        }
+        // std::cout << "source=" << source << std::endl;
+        for(auto kv : bound_map){
+            // 新边权= delta/d
+            expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second / 0.8)); 
+        } 
+        // debug
+        // {
+        //     for(auto u : node_set){
+        //         Node<vertex_t, value_t>& node = nodes[u];
+        //         std::cout << "inner_map: " << u << " " << node.value << std::endl;
+        //     }
+        // }
+        /* reset value */
+        // i = 0;
+        // for(auto u : node_set){
+        //     Node<vertex_t, value_t>& node = nodes[u];
+        //     if(FLAGS_php_source != vertex_reverse_map[source]){
+        //         node.value = app_->default_v();
+        //     }
+        //     else{
+        //         node.value = old_value[i];
+        //         std::cout << "测试： id=" << u << " value=" << node.value << std::endl; 
+        //     }
+        //     i++;
+        // }
+    }
+
 
     /**
      * 通过源s传播，找到s可达的点
@@ -539,6 +659,8 @@ public:
     }
 
     void start_find(const std::string &result_analyse_file=""){
+        // init app.weight_sum
+        this->app_->iterate_begin(this->nodes, this->nodes_num);
         // init Fc
         Fc = new vertex_t[nodes_num+1];
         for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
@@ -557,13 +679,14 @@ public:
             }
         }
         // 为每个结构计算内部边权
-#pragma omp parallel for //num_threads(12)
+// #pragma omp parallel for //num_threads(12)
         for(vertex_t i = 0; i < supernodes_num; i++){
             // 利用Dijkstra求最短路径
             // Dijkstra(expand_data[i]);
-            init_ExpandData(expand_data[i]);
+            // init_ExpandData(expand_data[i]); // traversal
+            init_ExpandData_iter(expand_data[i]); // iterative
         }
-#pragma omp barrier
+// #pragma omp barrier
 
         // 统计
         vertex_t inner_edges_num = 0;
