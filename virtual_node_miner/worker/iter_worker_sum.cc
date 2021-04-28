@@ -109,6 +109,13 @@ public:
         //     }
         // }
 
+        // 如果源点在超点内部且不是入口，需要将该超点解压
+        vertex_t source_new_id = this->getNewId(FLAGS_php_source);
+        if(this->Fc[source_new_id] != this->Fc_default_value && this->Fc[source_new_id] != source_new_id){
+            this->delete_supernode(this->Fc[source_new_id]);
+            LOG(INFO) << "source in supernode...";
+        }
+
         while(true){
             delta_sum = 0;
             is_convergence = true;
@@ -171,7 +178,7 @@ public:
                     is_convergence = false;
                     this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 }
-                if(node.oldDelta != this->app_->default_v() && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){ // 需要单独判断这个点是否时活跃点, 同时内部点不需要发消息，默认为非活跃
+                if(node.oldDelta != this->app_->default_v() && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){ // 需要单独判断这个点是否是活跃点, 同时内部点不需要发消息，默认为非活跃
                     next_modified_.set_bit(i - begin);
                 }
                 node.recvDelta = this->app_->default_v();
@@ -183,18 +190,12 @@ public:
             active_node_num = curr_modified_.parallel_count(4);
             if(step % 100 == 0)
                 LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
-            //debug
-            {
-                if(active_node_num == 1){
-
-                }
-            }
 
             // 更新阈值
             if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
                 itrative_threshold += 15 + step*0.1;
                 threshold_change_cnt++;
-                std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
+                std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << " active_num=" << active_node_num << std::endl;
                 continue;
             }
 
