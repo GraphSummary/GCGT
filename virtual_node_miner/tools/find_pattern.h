@@ -529,7 +529,7 @@ public:
                     for(auto edge: nodes[q].out_adj){
                         vertex_t u = edge.first;
                         // nodes[u].tag = source; // 在第一阶段已经做过了，这样才能起到限制跳数
-                        if (nodes[u].tag == source && in_queue_nodes[u] == 0 && visited_nodes[u] == 0){
+                        if (nodes[u].tag == source && in_queue_nodes[u] == 0 && visited_nodes[u] == 0 && u != source){ // source不入队列
                             new_q.push(u);
                             in_queue_nodes[u] = 1;
                             visited_nodes[u] = 1;
@@ -543,7 +543,7 @@ public:
                         Node<vertex_t, value_t> &node = nodes[u];
                         if(node.tag == source){
                             node.tag = node.id; // reset
-                            if (in_queue_nodes[u] == 0){ // 这种情况，只需要不再队列中都需要加入队列
+                            if (in_queue_nodes[u] == 0 && u != source){ // 这种情况，只需要不在队列中都需要加入队列, source不入队列
                                 new_q.push(u);
                                 in_queue_nodes[u] = 1;
                                 visited_nodes[u] = 1;
@@ -572,7 +572,7 @@ public:
     }
 
     /**
-     * 计算结构内最短路径
+     * 生成超点
      */
     void third_phase(const vertex_t source){
         // std::cout << "start third phase..." <<  std::endl;
@@ -594,7 +594,7 @@ public:
                 }
             } 
         }
-        // std::cout << std::endl;
+        // std::cout << visited_nodes.size() << std::endl;
         if(visited_nodes.size() < MIN_NODE_NUM){
             // std::cout << "visited_nodes.size() < MIN_NODE_NUM  size=" << visited_nodes.size() << std::endl;
             return;
@@ -667,13 +667,18 @@ public:
         // init expand_data
         expand_data = new ExpandData<vertex_t, value_t>[nodes_num/MIN_NODE_NUM];
 
+        // std::cout << "start compress" << std::endl;
         for(vertex_t i = 0; i < nodes_num; i++){
             if(Fc[i] != Fc_default_value) continue;
             vertex_t source = i; // 指定一个源点
+            // std::cout << "source=" << vertex_reverse_map[i] << std::endl;
             bool rt = first_phase(source);
+            // std::cout << "finish 1 phase" << std::endl;
             if(!rt) continue;
             second_phase(source);
+            // std::cout << "finish 2 phase" << std::endl;
             third_phase(source);
+            // std::cout << "finish 3 phase" << std::endl;
             if(i % 10000 == 0){
                std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
@@ -741,14 +746,15 @@ public:
      * 根据超点id删除超点，注意并未释放数组中点的空间
     */
     void delete_supernode(const vertex_t supernodeid){
-        ExpandData<vertex_t, value_t> &expand_v = expand_data[supernodeid];
+        vertex_t del_id = Fc_map[supernodeid]; // 获取superid在数组中的索引
+        ExpandData<vertex_t, value_t> &expand_v = expand_data[del_id];
         // clear Fc
         for(auto u : expand_v.ids){
             Fc[u] = Fc_default_value;
         }
         ExpandData<vertex_t, value_t> &expand_end = expand_data[supernodes_num-1];
         // updata Fc_map
-        Fc_map[expand_end.id] = supernodeid;
+        Fc_map[expand_end.id] = del_id;
         Fc_map[expand_v.id] = Fc_map_default_value;
         // clear supernode 
         expand_v.swap(expand_end);
@@ -836,7 +842,7 @@ public:
 public:
     unordered_map<vertex_t, vertex_t> vertex_map; //原id: 新id
     unordered_map<vertex_t, vertex_t> vertex_reverse_map; // 新id: 原id
-    unordered_map<vertex_t, vertex_t> Fc_map; // id: superid
+    unordered_map<vertex_t, vertex_t> Fc_map; // superid: index of expand_data
     Node<vertex_t, value_t> *nodes;
     vertex_t nodes_num=0;
     vertex_t edges_num=0;
