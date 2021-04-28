@@ -74,7 +74,7 @@ public:
 
     void start(){
         std::cout << "start..." << std::endl;
-        // init();
+        init();
         // print_result();
 
         vertex_t step = 0;
@@ -93,21 +93,21 @@ public:
         vertex_t active_node_num = 0;
 
         // first phase: all supernode send
-        for(vertex_t i = 0; i < this->supernodes_num; i++){
-            ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
-            for(auto& u : supernode.ids){
-                Node<vertex_t, value_t>& node = this->nodes[u];
-                for(auto& edge : node.out_adj){
-                    if(this->Fc[edge.first] == supernode.id){
-                        continue;
-                    }
-                    value_t& recvDelta = this->nodes[edge.first].recvDelta;
-                    value_t sendDelta; 
-                    this->app_->g_func(i, node.value, node.value, edge, sendDelta);
-                    this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-                }
-            }
-        }
+        // for(vertex_t i = 0; i < this->supernodes_num; i++){
+        //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
+        //     for(auto& u : supernode.ids){
+        //         Node<vertex_t, value_t>& node = this->nodes[u];
+        //         for(auto& edge : node.out_adj){
+        //             if(this->Fc[edge.first] == supernode.id){
+        //                 continue;
+        //             }
+        //             value_t& recvDelta = this->nodes[edge.first].recvDelta;
+        //             value_t sendDelta; 
+        //             this->app_->g_func(i, node.value, node.value, edge, sendDelta);
+        //             this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+        //         }
+        //     }
+        // }
 
         while(true){
             delta_sum = 0;
@@ -159,12 +159,15 @@ public:
             }
 
             // receive
+            // Node<vertex_t, value_t>& node = this->nodes[0];
+            // std::cout << node.value << " " << node.oldDelta << " " << node.recvDelta << std::endl;
             for(vertex_t i = 0; i < this->nodes_num; i++){
                 Node<vertex_t, value_t>& node = this->nodes[i];
                 value_t old_value = node.value;
                 this->app_->accumulate(node.value, node.recvDelta); // delat -> value
                 // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
-                if(old_value != node.value && this->Fc[i] == this->Fc_default_value){
+                // if(old_value != node.value && this->Fc[i] == this->Fc_default_value){
+                if(old_value != node.value && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){  // 超点更新
                     is_convergence = false;
                     this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 }
@@ -174,11 +177,18 @@ public:
                 node.recvDelta = this->app_->default_v();
             }
             // print_result();
+            // std::cout << "测试  " << is_convergence << " size=" << next_modified_.parallel_count(4) << std::endl; 
             step++;
             next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
             if(step % 100 == 0)
                 LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
+            //debug
+            {
+                if(active_node_num == 1){
+
+                }
+            }
 
             // 更新阈值
             if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
@@ -189,15 +199,18 @@ public:
             }
 
             if(is_convergence || step > FLAGS_max_iterater_num){
-                std::cout << "测试： " << this->nodes[0].value << std::endl;
+                // std::cout << "测试： " << this->nodes[0].value << std::endl;
                 // supernode内值分配-超点send -> inner_edges
                 for(vertex_t i = 0; i < this->supernodes_num; i++){
                     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
                     // Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                    std::cout << "debug... " << supernode.id << " " << supernode.data << std::endl;
+                    // std::cout << "debug... " << supernode.id << " " << supernode.data << std::endl;
                     if(supernode.data == this->app_->default_v()){
                         continue;
                     }
+                    // 清空自己的值
+                    this->nodes[supernode.id].value = this->app_->default_v();
+                    // std::cout << "supernode.data=" << supernode.data << std::endl;
                     for(auto& edge : supernode.inner_edges){ // i -> adj
                         value_t& value = this->nodes[edge.first].value; // adj's value
                         value_t sendDelta; // i's 
@@ -205,7 +218,7 @@ public:
                         this->app_->g_func(supernode.id, supernode.data, 0, edge, sendDelta);
                         this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                         super_send_cnt++;
-                        std::cout << "=========" << std::endl;
+                        // std::cout << "=========" << "id=" << supernode.id << " " << edge.first << " " << value << " " << sendDelta << std::endl;
                     }
                 }
                 break;

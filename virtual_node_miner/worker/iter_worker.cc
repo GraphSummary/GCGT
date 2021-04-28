@@ -148,6 +148,7 @@ public:
         vertex_t active_node_num = 0;
 
         while(true){
+            step++;
             delta_sum = 0;
             is_convergence = true;
             next_modified_.parallel_clear(4);
@@ -195,7 +196,13 @@ public:
                 // node.oldDelta = node.recvDelta;
                 node.recvDelta = app_->default_v();
             }
-            step++;
+            //debug
+            // {
+            //     for(vertex_t i = 0; i < nodes_num; i++){
+            //         Node<vertex_t, value_t>& node = nodes[i];
+            //         std::cout << "step=" << step << " i=" << i << " value=" <<  node.value << " olddelta=" << node.oldDelta <<  std::endl;
+            //     }
+            // }
             next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
             if(step % 100 == 0)
