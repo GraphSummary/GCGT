@@ -239,7 +239,7 @@ public:
 };
 
 int main(int argc,char **argv) {
-    // g++ iter_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_php_pattern_base.e -php_source=0 -output=../out/php_result -delta_step_threshold=3
+    // g++ iter_worker.cc -lgflags -lglog && ./a.out -base_edge=../input/test_data_sssp_pattern_base.e -php_source=0 -output=../out/php_result -delta_step_threshold=3
     // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/code/a_autoInc/AutoInc/dataset/p2p-31_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3
     // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/p2p-Gnutella31/p2p-Gnutella31_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3
     // g++ traversal_worker.cc -lgflags -lglog && ./a.out -base_edge=/home/yusong/dataset/inf-roadNet-CA/inf-roadNet-CA_weighted_base.e -shortestpath_source=0 -output=../out/sssp_result -delta_step_threshold=3 -result_analyse=./out/sssp__result_analyse
