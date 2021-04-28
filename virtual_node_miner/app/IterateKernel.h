@@ -1,11 +1,13 @@
 #ifndef APP_ITERATEKERNEL_H_
 #define APP_ITERATEKERNEL_H_
-    
+#include "../graph/node.h"
+
 template <class K, class V, class D>
 class IterateKernel{
 public:
     unsigned long long int g_cnt = 0;
     unsigned long long int f_cnt = 0;
+    virtual void iterate_begin(Node<K, V> *nodes, K node_num){}
     // virtual void read_data(string& line, K& k, D& data, int &size) = 0;
     virtual void init_c(const K& k, V& delta, D& data) = 0;
     virtual void init_c(const K& k, V& delta, std::vector<std::pair<K, V>>& data, const K& source) = 0;
@@ -18,7 +20,7 @@ public:
     }
     virtual void priority(V& pri, const V& value, const V& delta) = 0;
     virtual void g_func(const K& k, const V& delta, const V& value, const D& data, std::vector<std::pair<K, V> >* output) = 0;
-    virtual void g_func(const V& delta, const V& value, V& data) = 0;
+    virtual void g_func(const K& k, const V& delta,const V& value, const std::pair<K, V>& data, V& output) = 0;
 };
 
 #endif  // APP_ITERATEKERNEL_H_
