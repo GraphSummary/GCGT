@@ -10,7 +10,7 @@ template<class vertex_t, class value_t>
 class PhpIterateKernel : public IterateKernel<vertex_t, value_t, std::vector<std::pair<vertex_t, value_t>> > {
 public: 
     using adj_list_t = typename std::vector<std::pair<vertex_t, value_t>>;
-    value_t zero;
+    value_t zero=0;
     std::vector<vertex_t> weight_sum;
 
     PhpIterateKernel (): zero(0){
@@ -25,9 +25,9 @@ public:
             for (auto& e : node.out_adj) {
                 auto dst = e.first;
                 auto weight = e.second;
-                if (dst != source_id) {
+                // if (dst != source_id) { // ?????
                     weight_sum[node.id] += weight;
-                }
+                // }
             }
         }
         // 修改权重
