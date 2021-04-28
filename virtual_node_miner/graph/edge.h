@@ -30,4 +30,10 @@ public:
     }
 };
 
+struct Link{
+  Link(int inend, float inweight) : end(inend), weight(inweight) {}
+  int end;
+  float weight;
+};
+
 #endif  // GRAPH_EDGE_H_

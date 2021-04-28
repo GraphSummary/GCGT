@@ -22,6 +22,7 @@ class ExpandData
 {
 public:
     vertex_t id;
+    value_t data=0; // 用于sum类暂存数据
     std::vector<vertex_t> ids; // 属于这个结构的id set
     // std::vector<vertex_t> inner_ids; // 属于这个结构的内部id set(指不与外界点有连边的点)
     // std::vector<vertex_t> bound_ids; // 属于这个结构的边界id set(指与外界点有连边的点)
