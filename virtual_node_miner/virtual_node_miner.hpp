@@ -828,19 +828,21 @@ public:
         int _raw_num_node_new = 0;
         int _num_node_new = 0;
         for(int i = 0; i < _raw_num_node; i++){
-            if(_adjlists[i].size() > 0) _raw_num_node_new++;
+            // if(_adjlists[i].size() > 0) _raw_num_node_new++;  // 保证每个点有出度的情况下可以过滤掉一些废弃顶点
+            _raw_num_node_new++; // 允许存在没有出度的顶点
         }
         _num_node_new = _raw_num_node_new;
         for(int i = _raw_num_node; i < _num_node; i++){
-            if(_adjlists[i].size() > 0) _num_node_new++;
+            // if(_adjlists[i].size() > 0) _num_node_new++;
+            _num_node_new++;
         }
         fprintf(fp, "%d %d\n", int(_num_node_new), int(_raw_num_node_new));
         printf("_num_node=%d _raw_num_node=%d\n", int(_num_node), int(_raw_num_node));
         printf("_num_node_new=%d _raw_num_node_new=%d\n", int(_num_node_new), int(_raw_num_node_new));
         for (int i = 0; i < _num_node; i++) {
-            if(_adjlists[i].size() > 0){
+            // if(_adjlists[i].size() > 0){
                 fprintf(fp, "%d %d %d\n", i, _x[i], _y[i]);
-            }
+            // }
         }
         fclose(fp);
 
