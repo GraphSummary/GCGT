@@ -97,6 +97,20 @@ public:
             // std::cout << v << ": " << nodes[v].tag << ", " << u << ": " << nodes[u].tag << std::endl;
         }
         std::cout << "load finied, nodes_num=" << nodes_num << " edges_num=" << edges.size() << std::endl;
+        // find max out degree
+        {   
+            vertex_t id = 0;
+            vertex_t max = -1;
+            vertex_t temp = 0;
+            for(vertex_t i = 0; i < nodes_num; i++){
+                temp = nodes[i].out_adj.size();
+                if(temp > max){
+                    max = temp;
+                    id = i;
+                }
+            }
+            std::cout << "--------max_id=" << id << " max_degree=" << max << std::endl;
+        }
     }
 
     void load_update(const std::string &efile){
@@ -249,7 +263,10 @@ public:
                 }
                 node.recvDelta = app_->default_v();
             }
-            if(is_convergence){
+            if(is_convergence || step > 1000){
+                if(step > 1000){
+                    LOG(INFO) << "compress: step>1000";
+                }
                 break;
             }
         }
@@ -337,7 +354,7 @@ public:
     }
 
     /**
-     * sum
+     * sum， 需要修正delta
      * 计算超点内部需要的值，以及重新为边界点建立新边
     */
     void init_ExpandData_iter(ExpandData<vertex_t, value_t> &expand_data){
@@ -379,7 +396,8 @@ public:
         value_t sendDelta;
         for(auto u : node_set){
             Node<vertex_t, value_t>& node = nodes[u];
-            expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value / 0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+            expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value/0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+            expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, node.oldDelta/0.8)); // 为内部点缓存收敛时剩余的delta
             for(auto &edge : node.out_adj){
                 if(Fc[edge.first] != source){  // 可能会出现发给同一个点
                     // app_->g_func(node.value, edge.second, sendDelta);
@@ -445,7 +463,7 @@ public:
 
         while(!old_q.empty() && step < MAX_HOP && visited_nodes.size() <= MAX_NODE_NUM){
             step++;
-            while(!old_q.empty()){
+            while(!old_q.empty() && visited_nodes.size() <= MAX_NODE_NUM){
                 vertex_t q = old_q.front();
                 // std::cout << nodes[q].id << ",";
                 old_q.pop();
@@ -595,10 +613,28 @@ public:
             } 
         }
         // std::cout << visited_nodes.size() << std::endl;
+        // check size
         if(visited_nodes.size() < MIN_NODE_NUM){
             // std::cout << "visited_nodes.size() < MIN_NODE_NUM  size=" << visited_nodes.size() << std::endl;
             return;
         }
+        // check cost
+        // vertex_t old_edge_num = 0; // out edge of every node in supernode
+        // vertex_t new_edge_num = 0; // inner node + bound edge
+        // for(auto u : visited_nodes){
+        //     Node<vertex_t, value_t>& node = nodes[u];
+        //     old_edge_num += node.out_adj.size();
+        //     for(auto v : node.out_adj){
+        //         if(std::find(visited_nodes.begin(), visited_nodes.end(), v.first) == visited_nodes.end()){
+        //             new_edge_num += 1;
+        //         }
+        //     }
+        // }
+        // if(old_edge_num * 1.0 / (visited_nodes.size() + new_edge_num) < 1. || (old_edge_num - new_edge_num) < new_edge_num){
+        //     // std::cout << source << ": save=" << (old_edge_num * 1.0 / (visited_nodes.size() + new_edge_num)) << std::endl;
+        //     return;
+        // }
+
         for(auto u : visited_nodes){
             Fc[u] = source;
         }  
@@ -684,14 +720,22 @@ public:
             }
         }
         // 为每个结构计算内部边权
-// #pragma omp parallel for //num_threads(12)
+#pragma omp parallel for //num_threads(12)
         for(vertex_t i = 0; i < supernodes_num; i++){
             // 利用Dijkstra求最短路径
             // Dijkstra(expand_data[i]);
-            // init_ExpandData(expand_data[i]); // traversal
-            init_ExpandData_iter(expand_data[i]); // iterative
+            if(FLAGS_app == "sssp"){
+                init_ExpandData(expand_data[i]); // traversal: sssp
+            }
+            else if(FLAGS_app == "php"){
+               init_ExpandData_iter(expand_data[i]); // iterative: pr, php
+            }
+            else{
+                LOG(INFO) << "no this app....";
+                exit(0);
+            }
         }
-// #pragma omp barrier
+#pragma omp barrier
 
         // 统计
         vertex_t inner_edges_num = 0;
