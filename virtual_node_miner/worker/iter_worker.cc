@@ -32,9 +32,9 @@ using std::ofstream;
 using grape::Bitset;
 
 template<class vertex_t, class value_t>
-class TraversalWorker{
+class IterWorker{
 public:
-    TraversalWorker(){
+    IterWorker(){
         if(FLAGS_app == "sssp"){
             this->app_ = new ShortestpathIterateKernel<vertex_t, value_t>();
         }
@@ -185,7 +185,8 @@ public:
                 app_->accumulate(node.value, node.recvDelta); // delat -> value
                 // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
                 // app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
-                if(old_value != node.value){
+                // if(old_value != node.value){ // sssp类收敛
+                if(std::fabs(old_value - node.value) > FLAGS_convergence_threshold){  // pr/php类收敛
                     is_convergence = false;
                     // next_modified_.insert(i);
                     app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
@@ -224,15 +225,15 @@ public:
         LOG(INFO) << "node_send_cnt=" << node_send_cnt;
         // 统计结果写入文件：
         ofstream fout(FLAGS_result_analyse, std::ios::app);
-        fout << "TraversalWorker_step:" << step << "\n";
-        fout << "TraversalWorker_threshold_change_cnt:" << threshold_change_cnt << "\n";
-        fout << "TraversalWorker_g_cnt:" << app_->g_cnt << "\n";
-        fout << "TraversalWorker_f_cnt:" << app_->f_cnt << "\n";
-        fout << "TraversalWorker_node_send_cnt:" << node_send_cnt << "\n";
+        fout << "IterWorker_step:" << step << "\n";
+        fout << "IterWorker_threshold_change_cnt:" << threshold_change_cnt << "\n";
+        fout << "IterWorker_g_cnt:" << app_->g_cnt << "\n";
+        fout << "IterWorker_f_cnt:" << app_->f_cnt << "\n";
+        fout << "IterWorker_node_send_cnt:" << node_send_cnt << "\n";
         fout.close();
     }
 
-    ~TraversalWorker(){
+    ~IterWorker(){
         delete []nodes;
         delete app_;
     }
@@ -258,14 +259,14 @@ int main(int argc,char **argv) {
     timer_start(true);
     std::string base_edge = FLAGS_base_edge;
     std::string output = FLAGS_output;
-    TraversalWorker<int, float> worker = TraversalWorker<int, float>();
+    IterWorker<int, float> worker = IterWorker<int, float>();
     timer_next("load_graph");
     worker.load(base_edge);
     timer_next("compute");
     worker.start();
     timer_next("write_result");
     worker.write_result(output);
-    timer_end(true, "TraversalWorker", FLAGS_result_analyse);
+    timer_end(true, "IterWorker", FLAGS_result_analyse);
 
     google::ShutDownCommandLineFlags();
     google::ShutdownGoogleLogging();
