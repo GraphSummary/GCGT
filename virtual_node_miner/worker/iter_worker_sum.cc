@@ -1,5 +1,5 @@
 /*
-    summary图上的traversal算法
+    summary图上的iterative算法
 */
 #include <iostream>
 #include <fstream>
@@ -33,11 +33,12 @@ using std::ofstream;
 using grape::Bitset;
 
 template<class vertex_t, class value_t>
-class TraversalWorkerSum: public FindPattern<vertex_t, value_t>
+class IterWorkerSum: public FindPattern<vertex_t, value_t>
 {
 public:
-    TraversalWorkerSum(){
+    IterWorkerSum(){
         this->app_ = new PhpIterateKernel<vertex_t, value_t>();
+        // this->app_ = new ShortestpathIterateKernel<vertex_t, value_t>();
     }
 
     void print_result(){
@@ -166,15 +167,14 @@ public:
             }
 
             // receive
-            // Node<vertex_t, value_t>& node = this->nodes[0];
-            // std::cout << node.value << " " << node.oldDelta << " " << node.recvDelta << std::endl;
             for(vertex_t i = 0; i < this->nodes_num; i++){
                 Node<vertex_t, value_t>& node = this->nodes[i];
                 value_t old_value = node.value;
                 this->app_->accumulate(node.value, node.recvDelta); // delat -> value
                 // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
                 // if(old_value != node.value && this->Fc[i] == this->Fc_default_value){
-                if(old_value != node.value && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){  // 超点更新
+                // if(old_value != node.value && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){  // 超点更新:sssp类收敛
+                if(std::fabs(old_value - node.value) > FLAGS_convergence_threshold && (this->Fc[i] == i || this->Fc[i] == this->Fc_default_value)){  // 超点更新: pr/php类收敛
                     is_convergence = false;
                     this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 }
@@ -183,8 +183,6 @@ public:
                 }
                 node.recvDelta = this->app_->default_v();
             }
-            // print_result();
-            // std::cout << "测试  " << is_convergence << " size=" << next_modified_.parallel_count(4) << std::endl; 
             step++;
             next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
@@ -200,18 +198,15 @@ public:
             }
 
             if(is_convergence || step > FLAGS_max_iterater_num){
-                // std::cout << "测试： " << this->nodes[0].value << std::endl;
                 // supernode内值分配-超点send -> inner_edges
                 for(vertex_t i = 0; i < this->supernodes_num; i++){
                     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
-                    // Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                    // std::cout << "debug... " << supernode.id << " " << supernode.data << std::endl;
                     if(supernode.data == this->app_->default_v()){
                         continue;
                     }
                     // 清空自己的值
                     this->nodes[supernode.id].value = this->app_->default_v();
-                    // std::cout << "supernode.data=" << supernode.data << std::endl;
+                    // update value
                     for(auto& edge : supernode.inner_edges){ // i -> adj
                         value_t& value = this->nodes[edge.first].value; // adj's value
                         value_t sendDelta; // i's 
@@ -219,27 +214,99 @@ public:
                         this->app_->g_func(supernode.id, supernode.data, 0, edge, sendDelta);
                         this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                         super_send_cnt++;
-                        // std::cout << "=========" << "id=" << supernode.id << " " << edge.first << " " << value << " " << sendDelta << std::endl;
+                    }
+                    // update delta by get oldDelta
+                    for(auto& edge : supernode.inner_delta){
+                        value_t& old_delta = this->nodes[edge.first].oldDelta; // adj's delta
+                        value_t sendDelta; // i's 
+                        this->app_->g_func(supernode.id, supernode.data, 0, edge, sendDelta);
+                        this->app_->accumulate(old_delta, sendDelta); // sendDelta -> recvDelta
+                        super_send_cnt++;
                     }
                 }
                 break;
             }
         } 
+        LOG(INFO) << "app step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << this->app_->g_cnt << " f_cnt=" << this->app_->f_cnt;
+        LOG(INFO) << "correct start...";
+        // correct value by get oldDelta
+        while(true){
+            step++;
+            delta_sum = 0;
+            is_convergence = true;
+            next_modified_.parallel_clear(4);
+            // send
+            for(vertex_t batch = begin; batch < end; batch+=64){
+                vertex_t v = batch;
+                uint64_t word = curr_modified_.get_word(batch-begin); // 获得数组中的一个元素，每个元素64位，每位表示一个元素
+                while (word != 0) {
+                    if (word & 1) {
+                        Node<vertex_t, value_t>& node = this->nodes[v];
+                        if(node.oldDelta < itrative_threshold){  // 注意这个是针对sssp写的
+                            for(auto edge : node.out_adj){ // i -> adj
+                                value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                                value_t sendDelta; // i's 
+                                // app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                this->app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
+                                this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                                node_send_cnt++;
+                            }
+                            node.oldDelta = this->app_->default_v(); // delta发完需要清空 
+                        }
+                    }
+                    ++v;
+                    word = word >> 1;
+                }
+            }
+            // receive
+            for(vertex_t i = 0; i < this->nodes_num; i++){
+                Node<vertex_t, value_t>& node = this->nodes[i];
+                value_t old_value = node.value;
+                this->app_->accumulate(node.value, node.recvDelta); // delat -> value
+                // delta_sum += std::fabs(old_value - node.value); // 负的累加在一起会抵消，导致提前小于阈值
+                // if(old_value != node.value){ // sssp类收敛
+                if(std::fabs(old_value - node.value) > FLAGS_convergence_threshold){  // pr/php类收敛
+                    is_convergence = false;
+                    // next_modified_.insert(i);
+                    this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
+                }
+                if(node.oldDelta != this->app_->default_v()){ // 需要单独判断这个点是否时活跃点
+                    next_modified_.set_bit(i - begin);
+                }
+                // node.oldDelta = node.recvDelta;
+                node.recvDelta = this->app_->default_v();
+            }
+            next_modified_.swap(curr_modified_);
+            active_node_num = curr_modified_.parallel_count(4);
+            if(step % 100 == 0)
+                LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
+
+            // 更新阈值
+            if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
+                itrative_threshold += 15 + step*0.1;
+                threshold_change_cnt++;
+                std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << std::endl;
+                continue;
+            }
+            if(is_convergence || step > FLAGS_max_iterater_num){
+                break;
+            }
+        }
 
         LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << this->app_->g_cnt << " f_cnt=" << this->app_->f_cnt;
         LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
         // 统计结果写入文件：
         ofstream fout(FLAGS_result_analyse, std::ios::app);
-        fout << "TraversalWorkerSum_step:" << step << "\n";
-        fout << "TraversalWorkerSum_threshold_change_cnt:" << threshold_change_cnt << "\n";
-        fout << "TraversalWorkerSum_g_cnt:" << this->app_->g_cnt << "\n";
-        fout << "TraversalWorkerSum_f_cnt:" << this->app_->f_cnt << "\n";
-        fout << "TraversalWorkerSum_node_send_cnt:" << node_send_cnt << "\n";
-        fout << "TraversalWorkerSum_super_send_cnt:" << super_send_cnt << "\n";
+        fout << "IterWorkerSum_step:" << step << "\n";
+        fout << "IterWorkerSum_threshold_change_cnt:" << threshold_change_cnt << "\n";
+        fout << "IterWorkerSum_g_cnt:" << this->app_->g_cnt << "\n";
+        fout << "IterWorkerSum_f_cnt:" << this->app_->f_cnt << "\n";
+        fout << "IterWorkerSum_node_send_cnt:" << node_send_cnt << "\n";
+        fout << "IterWorkerSum_super_send_cnt:" << super_send_cnt << "\n";
         fout.close();
     }
 
-    ~TraversalWorkerSum(){
+    ~IterWorkerSum(){
     }
 
 protected:
@@ -262,7 +329,7 @@ int main(int argc,char **argv) {
     timer_start(true);
     std::string base_edge = FLAGS_base_edge;
     std::string output = FLAGS_output;
-    TraversalWorkerSum<int, float> worker = TraversalWorkerSum<int, float>();
+    IterWorkerSum<int, float> worker = IterWorkerSum<int, float>();
     timer_next("load_graph");
     worker.load(base_edge);
     timer_next("find_pattern");
@@ -274,7 +341,7 @@ int main(int argc,char **argv) {
     worker.start();
     timer_next("write_result");
     worker.write_result(output);
-    timer_end(true, "TraversalWorkerSum", FLAGS_result_analyse);
+    timer_end(true, "IterWorkerSum", FLAGS_result_analyse);
 
     google::ShutDownCommandLineFlags();
     google::ShutdownGoogleLogging();
