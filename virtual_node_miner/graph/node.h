@@ -29,6 +29,7 @@ public:
     // std::vector<std::pair<vertex_t, value_t>> edges; // s: (d, weight) 
     std::vector<std::pair<vertex_t, value_t>> inner_edges; // s: (d, weight). d is an inner node.
     std::vector<std::pair<vertex_t, value_t>> bound_edges; // s: (d, weight). d is a bound node.
+    std::vector<std::pair<vertex_t, value_t>> inner_delta; // s: (d, oldDelta). d is a inner node.
     void print_edge(){
         std::cout << "id=" << id << " size=" << ids.size() << std::endl;
         std::cout << "inner_edges:" << std::endl;
