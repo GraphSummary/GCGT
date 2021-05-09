@@ -20,7 +20,7 @@ public:
     }
 
     void init_c(const vertex_t& k, value_t& delta, adj_list_t& data){
-        if(k == FLAGS_shortestpath_source){
+        if(k == FLAGS_sssp_source){
             delta = 0;
         }else{
             delta = imax;
