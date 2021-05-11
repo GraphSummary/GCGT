@@ -18,6 +18,7 @@
 #include <glog/logging.h>
 #include "../utils/timer.h"
 #include "../app/shortestpath.h"
+#include "../app/pagerank.h"
 #include "../app/php.h"
 #include "../graph/node.h"
 #include "../graph/edge.h"
@@ -38,8 +39,15 @@ class IterWorkerSum: public FindPattern<vertex_t, value_t>
 {
 public:
     IterWorkerSum(){
-        this->app_ = new PhpIterateKernel<vertex_t, value_t>();
-        // this->app_ = new ShortestpathIterateKernel<vertex_t, value_t>();
+        if(FLAGS_app == "php"){
+            this->app_ = new PhpIterateKernel<vertex_t, value_t>();
+        }
+        else if(FLAGS_app == "pagerank"){
+            this->app_ = new PagerankIterateKernel<vertex_t, value_t>();
+        }
+        else{
+            LOG(INFO) << "no this app..." << std::endl;
+        }
     }
 
     void print_result(){
@@ -106,6 +114,8 @@ public:
         //     this->delete_supernode(this->Fc[source_new_id]);
         //     LOG(INFO) << "source in supernode...";
         // }
+        // LOG(INFO) << this->nodes[0].value << " " << this->nodes[0].oldDelta << " " << this->nodes[0].recvDelta;
+        // LOG(INFO) << this->nodes[1].value << " " << this->nodes[1].oldDelta << " " << this->nodes[1].recvDelta;
 
         while(true){
             delta_sum = 0;
@@ -134,7 +144,7 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -144,7 +154,7 @@ public:
                                     value_t& value = this->nodes[edge.first].value; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -154,7 +164,7 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -168,7 +178,7 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     node_send_cnt++;
                                 }
@@ -241,7 +251,7 @@ public:
             }
         } 
         LOG(INFO) << "app step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << this->app_->g_cnt << " f_cnt=" << this->app_->f_cnt;
-        LOG(INFO) << "correct start...";
+        // LOG(INFO) << "correct start...";
         // correct value by get oldDelta
         // while(true){
         //     step++;

@@ -18,6 +18,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include "../app/shortestpath.h"
+#include "../app/pagerank.h"
 #include "../app/php.h"
 #include "../graph/node.h"
 #include "../graph/edge.h"
@@ -40,6 +41,9 @@ public:
         }
         else if(FLAGS_app == "php"){
             this->app_ = new PhpIterateKernel<vertex_t, value_t>();
+        }
+        else if(FLAGS_app == "pagerank"){
+            this->app_ = new PagerankIterateKernel<vertex_t, value_t>();
         }
         else{
             LOG(INFO) << "no this app..." << std::endl;
@@ -166,7 +170,7 @@ public:
                                 value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
                                 value_t sendDelta; // i's 
                                 // app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
+                                app_->g_func(node.id, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                 app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                 node_send_cnt++;
                             }
