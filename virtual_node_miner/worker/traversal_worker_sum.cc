@@ -125,7 +125,7 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -135,7 +135,7 @@ public:
                                     value_t& value = this->nodes[edge.first].value; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -149,7 +149,7 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, edge, sendDelta);
+                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     node_send_cnt++;
                                 }
