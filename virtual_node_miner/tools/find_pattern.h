@@ -237,7 +237,7 @@ public:
             // send
             for(auto v : node_set){
                 Node<vertex_t, value_t>& node = nodes[v];
-                if(node.oldDelta != app_->default_v()){
+                if(fabs(node.oldDelta - app_->default_v()) > FLAGS_convergence_threshold){
                     for(auto &edge : node.out_adj){ // i -> adj
                         // if(Fc[edge.first].find(source) != Fc[edge.first].end()){ // 只发给内部点
                         if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 只发给内部点
@@ -246,7 +246,7 @@ public:
                         value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
                         value_t sendDelta; // i's 
                         // app_->g_func(node.oldDelta, edge.second, sendDelta);
-                        app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
+                        app_->g_func(node.id, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                     }
                     node.oldDelta = app_->default_v(); // delta发完需要清空 
@@ -257,7 +257,8 @@ public:
                 Node<vertex_t, value_t>& node = nodes[v];
                 value_t old_value = node.value;
                 app_->accumulate(node.value, node.recvDelta); // delat -> value
-                if(old_value != node.value){
+                // if(old_value != node.value){
+                if(fabs(old_value - node.value) > FLAGS_convergence_threshold){
                     is_convergence = false;
                     app_->accumulate(node.oldDelta, node.recvDelta); // updata delta
                 }
@@ -283,47 +284,7 @@ public:
         init_node(node_set, source);
        
         /* iterative calculation */
-        bool is_convergence = false;
-        int step = 0;
-        while(true){
-            step++;
-            is_convergence = true;
-            // send
-            for(auto v : node_set){
-                // std::cout << v << std::endl;
-                Node<vertex_t, value_t>& node = nodes[v];
-                if(node.oldDelta != app_->default_v()){
-                    for(auto &edge : node.out_adj){ // i -> adj
-                        // if(Fc[edge.first] != source){ // 只发给内部点
-                        // if(Fc[edge.first].find(source) == Fc[edge.first].end()){  // 只发给内部点
-                        if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){
-                            // std::cout << source << " " << edge.first << std::endl;
-                            continue;
-                        }
-                        value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
-                        value_t sendDelta; // i's 
-                        // app_->g_func(node.oldDelta, edge.second, sendDelta);
-                        app_->g_func(node.id, node.oldDelta, node.value, edge, sendDelta);
-                        app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-                    }
-                    node.oldDelta = app_->default_v(); // delta发完需要清空 
-                }
-            }
-            // receive
-            for(auto v : node_set){
-                Node<vertex_t, value_t>& node = nodes[v];
-                value_t old_value = node.value;
-                app_->accumulate(node.value, node.recvDelta); // delat -> value
-                if(old_value != node.value){
-                    is_convergence = false;
-                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delta
-                }
-                node.recvDelta = app_->default_v();
-            }
-            if(is_convergence){
-                break;
-            }
-        }
+        run_to_convergence(node_set, source);
         // std::cout << "step=" << step << std::endl;
 
         /**
@@ -342,7 +303,7 @@ public:
                 // if(Fc[edge.first].find(source) == Fc[edge.first].end()){  // 保证edge.first是边界点
                 if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 保证edge.first是边界点
                     // app_->g_func(node.value, edge.second, sendDelta);
-                    app_->g_func(node.id, node.value, node.value, edge, sendDelta);
+                    app_->g_func(node.id, node.value, node.value, node.out_adj, edge, sendDelta);
                     if(bound_map.find(edge.first) == bound_map.end()){
                         // bound_map[edge.first] = node.value + edge.second;
                         bound_map[edge.first] = sendDelta;
@@ -417,7 +378,7 @@ public:
                     //         }
                     // }
                     // app_->g_func(node.value, edge.second, sendDelta);
-                    app_->g_func(node.id, node.value, node.value, edge, sendDelta);
+                    app_->g_func(node.id, node.value, node.value, node.out_adj, edge, sendDelta);
                     if(bound_map.find(edge.first) == bound_map.end()){
                         // bound_map[edge.first] = node.value + edge.second;
                         bound_map[edge.first] = sendDelta;
@@ -878,7 +839,7 @@ public:
             if(FLAGS_app == "sssp"){
                 init_ExpandData(expand_data[i]); // traversal: sssp
             }
-            else if(FLAGS_app == "php"){
+            else if(FLAGS_app == "php" || FLAGS_app == "pagerank"){
                 init_ExpandData_iter(expand_data[i]); // iterative: pr, php
             }
             else{
