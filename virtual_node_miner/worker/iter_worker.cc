@@ -42,7 +42,7 @@ public:
             this->app_ = new PhpIterateKernel<vertex_t, value_t>();
         }
         else{
-            std::cout << "no this app..." << std::endl;
+            LOG(INFO) << "no this app..." << std::endl;
         }
     }
 
