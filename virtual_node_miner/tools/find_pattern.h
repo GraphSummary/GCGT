@@ -231,7 +231,6 @@ public:
     void run_to_convergence(std::vector<vertex_t> &node_set, const vertex_t source){
         bool is_convergence = false;
         int step = 0;
-        
         while(true){
             step++;
             is_convergence = true;
@@ -240,7 +239,8 @@ public:
                 Node<vertex_t, value_t>& node = nodes[v];
                 if(node.oldDelta != app_->default_v()){
                     for(auto &edge : node.out_adj){ // i -> adj
-                        if(Fc[edge.first] != source){ // 只发给内部点
+                        // if(Fc[edge.first].find(source) != Fc[edge.first].end()){ // 只发给内部点
+                        if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 只发给内部点
                             continue;
                         }
                         value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
@@ -290,10 +290,14 @@ public:
             is_convergence = true;
             // send
             for(auto v : node_set){
+                // std::cout << v << std::endl;
                 Node<vertex_t, value_t>& node = nodes[v];
                 if(node.oldDelta != app_->default_v()){
                     for(auto &edge : node.out_adj){ // i -> adj
-                        if(Fc[edge.first] != source){ // 只发给内部点
+                        // if(Fc[edge.first] != source){ // 只发给内部点
+                        // if(Fc[edge.first].find(source) == Fc[edge.first].end()){  // 只发给内部点
+                        if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){
+                            // std::cout << source << " " << edge.first << std::endl;
                             continue;
                         }
                         value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
@@ -334,7 +338,9 @@ public:
             Node<vertex_t, value_t>& node = nodes[u];
             expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
             for(auto &edge : node.out_adj){
-                if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                // if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                // if(Fc[edge.first].find(source) == Fc[edge.first].end()){  // 保证edge.first是边界点
+                if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 保证edge.first是边界点
                     // app_->g_func(node.value, edge.second, sendDelta);
                     app_->g_func(node.id, node.value, node.value, edge, sendDelta);
                     if(bound_map.find(edge.first) == bound_map.end()){
@@ -394,12 +400,22 @@ public:
         // 为结构加入直接指向外部点的最短距离边： source -> 外部id
         unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
         value_t sendDelta;
+
+        // if(source == getNewId(1))
+        //     std::cout << "测试： " << getNewId(1) << " " << nodes[getNewId(1)].value << " " << nodes[getNewId(1)].oldDelta << " " << nodes[getNewId(1)].recvDelta << std::endl;
         for(auto u : node_set){
             Node<vertex_t, value_t>& node = nodes[u];
             expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value/0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
             expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, node.oldDelta/0.8)); // 为内部点缓存收敛时剩余的delta
             for(auto &edge : node.out_adj){
-                if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                // if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){  // 保证edge.first是边界点
+                    // { // 测试
+                    //     if(source == getNewId(1))
+                    //         if(edge.first == source){
+                    //             std::cout << "测试：" << u << "->" << source << std::endl;
+                    //         }
+                    // }
                     // app_->g_func(node.value, edge.second, sendDelta);
                     app_->g_func(node.id, node.value, node.value, edge, sendDelta);
                     if(bound_map.find(edge.first) == bound_map.end()){
@@ -469,7 +485,8 @@ public:
                 old_q.pop();
                 for(auto edge: nodes[q].out_adj){
                     vertex_t u = edge.first;
-                    if(Fc[u] != Fc_default_value) continue;  // 已经位于其他结构中了
+                    // if(Fc[u] != Fc_default_value) continue;  // 已经位于其他结构中了
+                    if(Fc[u].size() != 0) continue;  // 已经位于其他结构中了
                     nodes[u].tag = s;
                     if (visited_nodes.find(u) == visited_nodes.end()){
                         new_q.push(u);
@@ -636,7 +653,8 @@ public:
         // }
 
         for(auto u : visited_nodes){
-            Fc[u] = source;
+            // Fc[u] = source;
+            Fc[u].emplace_back(source);
         }  
 
         // 查看Fc
@@ -661,6 +679,124 @@ public:
         supernodes_num++;
         // // 利用Dijkstra求最短路径
         // Dijkstra(expand_data[supernoed_id]);
+    }
+
+    /**
+     * 查找多入口的密集超点
+    */
+    void find_multi_source_supernode(const vertex_t source){
+        unordered_set<vertex_t> S; // supernode's source, V^in
+        unordered_set<vertex_t> P; // inner node, V
+        unordered_set<vertex_t> O; // inner node, V^out
+        std::queue<vertex_t> D; // candidate queue
+        unordered_set<vertex_t> visited_nodes;
+        // add source
+        visited_nodes.insert(source);
+        S.insert(source);
+        for(auto u : nodes[source].out_adj){
+            if(visited_nodes.find(u.first) == visited_nodes.end()){
+                D.push(u.first);
+                visited_nodes.insert(u.first);
+            }
+        }
+        // std::cout << "source: " << getOriginId(source) << std::endl;
+        float pre_socre = 0; // pre compressed score，这里是整个压缩结构的总体得分，不是待加入点的得分
+        while(!D.empty() && P.size() <= MAX_NODE_NUM){
+            vertex_t d = D.front();
+            D.pop();
+            if(Fc[d].size() == 1 && Fc[d][0] == d){
+                continue;
+            }
+            // std::cout << "test: d=" << d << std::endl;
+            int old_edge_num = 0;
+            int new_in_num = S.size();
+            int new_index_num = P.size() + O.size();
+            // compute old_edge_num
+            for(auto v : S){
+                // old_edge_num += nodes[v].out_adj.size();
+                for(auto u : nodes[v].out_adj){
+                    if(P.find(u.first) != P.end() || u.first == d){
+                        old_edge_num++; // v -> P
+                    }
+                }
+            }
+            for(auto u : P){
+                old_edge_num += nodes[u].out_adj.size();
+            }
+            old_edge_num += nodes[d].out_adj.size();
+            // compute new_in_num
+            // unordered_set<vertex_t> S_copy(S); // supernode's source, V^in
+            // if(S_copy.find(d) != S_copy.end()){
+            //     S_copy.erase(d);
+            //     new_in_num--;
+            // }
+            // for(auto u : nodes[d].in_adj){
+            //     if(S_copy.find(u.first) == S_copy.end() && P.find(u.first) == P.end()){
+            //         S_copy.insert(u.first);
+            //         new_in_num++;
+            //     }
+            // }
+            // compute new_index_num
+            new_index_num += 1; // if d insirt P
+            unordered_set<vertex_t> O_copy(O); // supernode's source, V^in
+            if(O_copy.find(d) != O_copy.end()){
+                O_copy.erase(d);
+                new_index_num--;
+            }
+            for(auto u : nodes[d].out_adj){
+                if(O_copy.find(u.first) == O_copy.end() && P.find(u.first) == P.end()){
+                    O_copy.insert(u.first);
+                    new_index_num++;
+                }
+            }
+            // 测试
+            // {
+            //     new_in_num = 1;
+            // }
+            float now_score = old_edge_num * 1.0 / (new_in_num * new_index_num);
+            // float now_score = (old_edge_num * 1.0 - new_in_num * new_index_num) / old_edge_num;
+            // std::cout << "d=" << getOriginId(d) << " pre_score=" << pre_socre << " now_score=" << now_score << " old_edge_num=" << old_edge_num << " new_in_num=" << new_in_num << " new_index_num=" << new_index_num << std::endl;
+            // if(now_score >= pre_socre){
+            if(now_score >= pre_socre || now_score >= 1.12){
+                pre_socre = now_score;
+                P.insert(d);
+                // S.swap(S_copy);
+                O.swap(O_copy);
+                for(auto u : nodes[d].out_adj){
+                    // if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first] == Fc_default_value){
+                    if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end()){
+                        D.push(u.first);
+                        visited_nodes.insert(u.first);
+                    }
+                }
+                // for(auto u : nodes[d].in_adj){
+                //     // if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first] == Fc_default_value){
+                //     if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end()){
+                //         D.push(u.first);
+                //         visited_nodes.insert(u.first);
+                //     }
+                // }
+            }
+        }
+        if(P.size() >= MIN_NODE_NUM){
+            // std::cout << "------ build a supernode" << std::endl;
+            Fc[source].emplace_back(source);
+            for(auto u : P){
+                Fc[u].emplace_back(source);
+                // std::cout << getOriginId(u) << " ";
+            }  
+            // std::cout << std::endl;
+            // build a supernode
+            vertex_t supernoed_id = supernodes_num;
+            Fc_map[source] = supernoed_id;
+            expand_data[supernoed_id].id = source;
+            expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), P.begin(), P.end());
+            expand_data[supernoed_id].ids.emplace_back(source);
+            supernodes_num++;
+        }
+        // else{
+        //     std::cout << "=== no find ===" << std::endl;
+        // }
     }
 
     void write_supernode(const std::string &efile){
@@ -698,13 +834,15 @@ public:
         // init app.weight_sum
         this->app_->iterate_begin(this->nodes, this->nodes_num);
         // init Fc
-        Fc = new vertex_t[nodes_num+1];
-        for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
+        // Fc = new vertex_t[nodes_num+1];
+        // for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
+        Fc.resize(nodes_num);
         // init expand_data
         expand_data = new ExpandData<vertex_t, value_t>[nodes_num/MIN_NODE_NUM];
 
-        // std::cout << "start compress" << std::endl;
-        for(vertex_t i = 0; i < nodes_num; i++){
+        std::cout << "start compress" << std::endl;
+        // single source supernode
+/*        for(vertex_t i = 0; i < nodes_num; i++){
             if(Fc[i] != Fc_default_value) continue;
             vertex_t source = i; // 指定一个源点
             // std::cout << "source=" << vertex_reverse_map[i] << std::endl;
@@ -719,6 +857,19 @@ public:
                std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
         }
+*/
+        // multi-source supernode
+        for(vertex_t i = 0; i < nodes_num; i++){
+            if(Fc[i].size() > 0) continue;
+            vertex_t source = i; // 指定一个源点
+            // std::cout << "source=" << vertex_reverse_map[i] << std::endl;
+            find_multi_source_supernode(source);
+        
+            if(i % 10000 == 0){
+               std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
+            }
+        }
+
         // 为每个结构计算内部边权
 #pragma omp parallel for //num_threads(12)
         for(vertex_t i = 0; i < supernodes_num; i++){
@@ -728,7 +879,7 @@ public:
                 init_ExpandData(expand_data[i]); // traversal: sssp
             }
             else if(FLAGS_app == "php"){
-               init_ExpandData_iter(expand_data[i]); // iterative: pr, php
+                init_ExpandData_iter(expand_data[i]); // iterative: pr, php
             }
             else{
                 LOG(INFO) << "no this app....";
@@ -763,6 +914,10 @@ public:
         std::cout << "inner_edges_num=" << inner_edges_num  << std::endl; 
         std::cout << "bound_edges_num=" << bound_edges_num  << std::endl; 
         std::cout << "supernodes_comtain_num/nodes_num=" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
+        std::cout << "supernodes_index/edges_num=" << ((inner_edges_num+bound_edges_num)*1.0/edges_num)  << std::endl; 
+        
+        return ; //测试
+
         // 统计结果写入文件
         ofstream outfile(result_analyse_file, std::ios::app);
         if(!outfile){
@@ -776,6 +931,7 @@ public:
         outfile << "inner_edges_num:" << inner_edges_num  << std::endl; 
         outfile << "bound_edges_num:" << bound_edges_num  << std::endl; 
         outfile << "supernodes_comtain_num/nodes_num:" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
+        outfile << "supernodes_index/edges_num:" << ((inner_edges_num+bound_edges_num)*1.0/edges_num)  << std::endl; 
     }
 
     vertex_t getOriginId(const vertex_t newid){
@@ -810,75 +966,74 @@ public:
         根据更新边还更新图和压缩结构：
         注意：更新边不涉及新的顶点
     */
-    void increment_update(){
-        char type;
-        vertex_t u, v;
-        value_t w;
-        for(auto edge : update_edges){
-            type = edge.type;
-            u = edge.source;
-            v = edge.destination;
-            w = edge.weight;
-            std::cout << "update: " << type << " " << u << "->" << v << " " << w << std::endl;
-            if(type == 'a'){
-                // + edge(u, v)
-                nodes[u].out_adj.emplace_back(std::pair<vertex_t, value_t>(v, w));
-                nodes[v].in_adj.emplace_back(std::pair<vertex_t, value_t>(u, w));
-                // 1. u is a innner node
-                if(Fc[u] != Fc_default_value){
-                    ExpandData<vertex_t, value_t> &expand = expand_data[Fc_map[Fc[u]]];
-                    // 1.1 inner id -> same inner id
-                    if(Fc[v] == Fc[u]){
-                        Dijkstra(expand);
-                    }
-                    // 1.2/1.4 inner id -> out id or supernode' s
-                    // else if(Fc[v] == Fc_default_value or expand_data[Fc_map[Fc[v]]].id == v){
-                    else{
-                        // s->u: dist(u)
-                        auto it = std::find_if(expand.inner_edges.begin(), expand.inner_edges.end(), isEqualALL<vertex_t>(u));
-                        std::cout << "it=" << it->first << " " << it->second << std::endl;
-                        if(it != expand.inner_edges.end()){
-                            // u is boundnode
-                            auto it_v = std::find_if(expand.bound_edges.begin(), expand.bound_edges.end(), isEqualALL<vertex_t>(v));
-                            if(it_v != expand.bound_edges.end()){
-                                it_v->second = std::min(it_v->second, it->second + w);
-                                std::cout << "--" << it_v->second << " " << (it->second + w) << std::endl;
-                            }
-                            else{
-                                expand.bound_edges.emplace_back(v, it->second + w);
-                                 std::cout << "==" << v << " " << (it->second + w) << std::endl;
-                            }
-                        }
-                        else{
-                            std::cout << "error.... u not in inner_edges" << std::endl;
-                            exit(0);
-                        }
-                    }
-                    // 1.3: inner id -> other inner id, decompress Fc[v]
-                    if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
-                        std::cout << "case: 1.3" << std::endl;
-                        delete_supernode(Fc_map[Fc[v]]);
-                    }
-                }
-                // 2. u is a out node
-                else{
-                    // 2.2 out node -> inner node
-                    if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
-                        std::cout << "case: 2.2" << std::endl;
-                        delete_supernode(Fc_map[Fc[v]]);
-                    }
-                }
-            }
-            else{
-                // - edge(u, v)
-                
-            }
-        }
-    }
+    // void increment_update(){
+    //     char type;
+    //     vertex_t u, v;
+    //     value_t w;
+    //     for(auto edge : update_edges){
+    //         type = edge.type;
+    //         u = edge.source;
+    //         v = edge.destination;
+    //         w = edge.weight;
+    //         std::cout << "update: " << type << " " << u << "->" << v << " " << w << std::endl;
+    //         if(type == 'a'){
+    //             // + edge(u, v)
+    //             nodes[u].out_adj.emplace_back(std::pair<vertex_t, value_t>(v, w));
+    //             nodes[v].in_adj.emplace_back(std::pair<vertex_t, value_t>(u, w));
+    //             // 1. u is a innner node
+    //             if(Fc[u] != Fc_default_value){
+    //                 ExpandData<vertex_t, value_t> &expand = expand_data[Fc_map[Fc[u]]];
+    //                 // 1.1 inner id -> same inner id
+    //                 if(Fc[v] == Fc[u]){
+    //                     Dijkstra(expand);
+    //                 }
+    //                 // 1.2/1.4 inner id -> out id or supernode' s
+    //                 // else if(Fc[v] == Fc_default_value or expand_data[Fc_map[Fc[v]]].id == v){
+    //                 else{
+    //                     // s->u: dist(u)
+    //                     auto it = std::find_if(expand.inner_edges.begin(), expand.inner_edges.end(), isEqualALL<vertex_t>(u));
+    //                     std::cout << "it=" << it->first << " " << it->second << std::endl;
+    //                     if(it != expand.inner_edges.end()){
+    //                         // u is boundnode
+    //                         auto it_v = std::find_if(expand.bound_edges.begin(), expand.bound_edges.end(), isEqualALL<vertex_t>(v));
+    //                         if(it_v != expand.bound_edges.end()){
+    //                             it_v->second = std::min(it_v->second, it->second + w);
+    //                             std::cout << "--" << it_v->second << " " << (it->second + w) << std::endl;
+    //                         }
+    //                         else{
+    //                             expand.bound_edges.emplace_back(v, it->second + w);
+    //                              std::cout << "==" << v << " " << (it->second + w) << std::endl;
+    //                         }
+    //                     }
+    //                     else{
+    //                         std::cout << "error.... u not in inner_edges" << std::endl;
+    //                         exit(0);
+    //                     }
+    //                 }
+    //                 // 1.3: inner id -> other inner id, decompress Fc[v]
+    //                 if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
+    //                     std::cout << "case: 1.3" << std::endl;
+    //                     delete_supernode(Fc_map[Fc[v]]);
+    //                 }
+    //             }
+    //             // 2. u is a out node
+    //             else{
+    //                 // 2.2 out node -> inner node
+    //                 if(Fc[v] != Fc_default_value && expand_data[Fc_map[Fc[v]]].id != v){
+    //                     std::cout << "case: 2.2" << std::endl;
+    //                     delete_supernode(Fc_map[Fc[v]]);
+    //                 }
+    //             }
+    //         }
+    //         else{
+    //             // - edge(u, v)
+    //         }
+    //     }
+    // }
 
     ~FindPattern(){
         delete[] nodes;
-        delete[] Fc;
+        // delete[] Fc;
         delete[] expand_data;
         delete app_;
     }
@@ -894,7 +1049,8 @@ public:
     vertex_t MAX_HOP=4; // 查找的跳数
     vertex_t MAX_NODE_NUM=100; // 结构内包含的最大顶点数量
     vertex_t MIN_NODE_NUM=4;   // 结构内包含的最小顶点数量
-    vertex_t *Fc; // fc[x]=s, s->x
+    // vertex_t *Fc; // fc[x]=s, s->x
+    vector<vector<vertex_t>> Fc; // fc[x]=s, s->x
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
     const int Fc_default_value = -1; // Fc[]的默认值
     const int Fc_map_default_value = -1; // Fc_map的默认值
