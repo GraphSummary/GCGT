@@ -1,59 +1,53 @@
-#ifndef APP_SHORTESTPATH_ITERATEKERNEL_H_
-#define APP_SHORTESTPATH_ITERATEKERNEL_H_
+#ifndef APP_PAGERANK_H_
+#define APP_PAGERANK_H_
 
 #include "IterateKernel.h"
 #include "../worker/flags.h"
-
-// DECLARE_string(result_dir);
-// DEFINE_int64(num_nodes);
-// DECLARE_double(portion);
+#include "../graph/node.h"
+#include <vector>
 
 template<class vertex_t, class value_t>
-class ShortestpathIterateKernel : public IterateKernel<vertex_t, value_t, std::vector<std::pair<vertex_t, value_t>> > {
+class PagerankIterateKernel : public IterateKernel<vertex_t, value_t, std::vector<std::pair<vertex_t, value_t>> > {
 public: 
     using adj_list_t = typename std::vector<std::pair<vertex_t, value_t>>;
-    value_t imax;
-    value_t zero;
+    value_t zero=0;
 
-    ShortestpathIterateKernel (): zero(0){
-        imax = std::numeric_limits<value_t>::max();
+    PagerankIterateKernel (): zero(0){
     }
 
     void init_c(const vertex_t& k, value_t& delta, adj_list_t& data){
-        if(k == FLAGS_sssp_source){
-            delta = 0;
-        }else{
-            delta = imax;
-        }
+        delta = 0.2;
     }
-    // 用于sssp类超点内部初始化
+    // 超点内部初始化
     void init_c(const vertex_t& k, value_t& delta, adj_list_t& data, const vertex_t& source){
-        if(k == source){
-            delta = 0;
-        }else{
-            delta = imax;
-        }
+        delta = 0.2;
     }
     void init_v(const vertex_t& k, value_t& v, adj_list_t& data){
-        v = imax;  
+        v = 0.0f;
     }
         
     void accumulate(value_t& a, const value_t& b){
-        a = std::min(a, b); 
+        a += b; 
         this->g_cnt++;
     }
 
     void priority(value_t& pri, const value_t& value, const value_t& delta){
-        pri = value - std::min(value, delta); 
+        pri = delta; 
     }
 
-    // void g_func(const value_t& delta, const value_t& value, value_t& data){
+    // void g_func(const vertex_t &k, const value_t& delta, const value_t& value, value_t& data, value_t& output){
     void g_func(const vertex_t &k, const value_t& delta, const value_t& value, const adj_list_t& adj_edges, const std::pair<vertex_t, value_t>& data, value_t& output){
-        output = delta + data.second;
+        output = delta * 0.80 / (int) adj_edges.size();
         this->f_cnt++;
     }
 
-    void g_func(const vertex_t &k, const value_t& delta,const value_t& value, const adj_list_t& data, adj_list_t* output){
+    // 超点索引计算
+    value_t g_refunc(const vertex_t& k, value_t& delta, adj_list_t& data){
+
+        return data;
+    }
+
+    void g_func(const vertex_t &k, const value_t& delta, const value_t& value, const adj_list_t& data, adj_list_t* output){
         // for(std::vector<std::pair<vertex_t, value_t>>::const_iterator it=data.begin(); it!=data.end(); it++){
         //     std::pair<vertex_t, value_t> target = *it;
         //     value_t outv = delta + target.weight;
@@ -62,13 +56,12 @@ public:
     }
 
     const value_t& default_v() const {
-        return imax;
+        return zero;
     }
-    
+
     const value_t& min_delta() const {
-         return zero;
+        return zero;
     }
-    
 };
 
-#endif  // APP_SHORTESTPATH_ITERATEKERNEL_H_
+#endif  // APP_PAGERANK_H_

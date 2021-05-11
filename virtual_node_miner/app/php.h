@@ -72,7 +72,7 @@ public:
     }
 
     // void g_func(const vertex_t &k, const value_t& delta, const value_t& value, value_t& data, value_t& output){
-    void g_func(const vertex_t &k, const value_t& delta, const value_t& value, const std::pair<vertex_t, value_t>& data, value_t& output){
+    void g_func(const vertex_t &k, const value_t& delta, const value_t& value, const adj_list_t& adj_edges, const std::pair<vertex_t, value_t>& data, value_t& output){
         // output = data.second * delta * 0.80 / weight_sum[k];
         output = data.second * delta * 0.80;
         this->f_cnt++;

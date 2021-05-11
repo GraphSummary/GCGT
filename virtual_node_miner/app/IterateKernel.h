@@ -20,7 +20,8 @@ public:
     }
     virtual void priority(V& pri, const V& value, const V& delta) = 0;
     virtual void g_func(const K& k, const V& delta, const V& value, const D& data, std::vector<std::pair<K, V> >* output) = 0;
-    virtual void g_func(const K& k, const V& delta,const V& value, const std::pair<K, V>& data, V& output) = 0;
+    virtual void g_func(const K& k, const V& delta, const V& value, const D& adj_edges, const std::pair<K, V>& data, V& output){}
+    virtual void g_func(const K& k, const V& delta,const V& value, const std::pair<K, V>& data, V& output){}
 };
 
 #endif  // APP_ITERATEKERNEL_H_
