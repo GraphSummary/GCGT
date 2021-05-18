@@ -176,7 +176,7 @@ public:
                             if(this->Fc[i].size() == 1 && this->Fc[i][0] == i){
                                 // 超点send
                                 ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
-                                Node<vertex_t, value_t>& node = this->nodes[supernode.id];
+                                // Node<vertex_t, value_t>& node = this->nodes[supernode.id];  // 需要删除
                                 // for(auto& edge : supernode.edges){ // i -> adj
                                 /* send to delat by bound_edges */
                                 for(auto& edge : supernode.bound_edges){ // i -> adj
@@ -276,6 +276,7 @@ public:
             /* correct deviation in supernode */
             if(is_convergence && is_correct == false){
                 is_correct = true;
+                LOG(INFO) << "correct deviation in supernode, step=" << step;
                 for(vertex_t i = 0; i < this->supernodes_num; i++){
                     ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
                     Node<vertex_t, value_t>& node = this->nodes[supernode.id];
@@ -369,8 +370,7 @@ public:
         //     }
         // }
 
-        // LOG(INFO) << "app convergence step=" << step << " threshold_change_cnt=" << threshold_change_cnt << " g_cnt=" << this->app_->g_cnt << " f_cnt=" << this->app_->f_cnt;
-        // LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
+        LOG(INFO) << "node_send_cnt=" << node_send_cnt << " super_send_cnt=" << super_send_cnt << " +=" << (node_send_cnt+super_send_cnt);
 
         // 统计结果写入文件：
         ofstream fout(FLAGS_result_analyse, std::ios::app);
@@ -430,8 +430,8 @@ int main(int argc,char **argv) {
     timer_next("find_pattern");
     worker.start_find(FLAGS_result_analyse);
     // return 0; // 测试
-    // timer_next("write_pattern");
-    // worker.write_supernode("./out/a_pattern");
+    timer_next("write_pattern");
+    worker.write_supernode("./out/a_pattern");
     timer_next("compute");
     worker.start();
     timer_next("write_result");
