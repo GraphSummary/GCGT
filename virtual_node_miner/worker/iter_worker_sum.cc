@@ -137,6 +137,7 @@ public:
         next_modified_.init(end-begin);
         vertex_t active_node_num = 0;
         last_values = new value_t[this->nodes_num];
+        bool is_correct = false;
 
         /* init last_values */
         for(vertex_t i = 0; i < this->nodes_num; i++){
@@ -187,30 +188,34 @@ public:
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
-                                /* send to value by inner_edges */
-                                for(auto& edge : supernode.inner_edges){ // i -> adj
-                                    // value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-                                    value_t& value = this->nodes[edge.first].value; // adj's recvDelta
-                                    value_t sendDelta; // i's 
-                                    // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
-                                    this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
-                                    this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
-                                    super_send_cnt++;
+                                if(is_correct){
+                                    /* send to value by inner_edges */
+                                    for(auto& edge : supernode.inner_edges){ // i -> adj
+                                        // value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                                        value_t& value = this->nodes[edge.first].value; // adj's recvDelta
+                                        value_t sendDelta; // i's 
+                                        // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                        // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                        this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                        this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
+                                        super_send_cnt++;
+                                    }
+                                    /* send to oldDelta by inner_delta */
+                                    for(auto& edge : supernode.inner_delta){ // i -> adj
+                                        // value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                                        value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                                        value_t sendDelta; // i's 
+                                        // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
+                                        // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                        this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                        this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                                        super_send_cnt++;
+                                    }
                                 }
-                                /* send to oldDelta by inner_delta */
-                                for(auto& edge : supernode.inner_delta){ // i -> adj
-                                    // value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-                                    value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
-                                    value_t sendDelta; // i's 
-                                    // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
-                                    this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
-                                    this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
-                                    super_send_cnt++;
+                                else{
+                                    value_t& recvDelta = supernode.data;
+                                    this->app_->accumulate(recvDelta, node.oldDelta); // 暂存oldDelta
                                 }
-                                // value_t& recvDelta = supernode.data;
-                                // this->app_->accumulate(recvDelta, node.oldDelta); // 暂存oldDelta
                                 node.oldDelta = this->app_->default_v(); // delta发完需要清空
                             }
                             else if(!(this->Fc[i].size() == 1 && this->Fc[i][0] == i)){
@@ -267,6 +272,32 @@ public:
             //     std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << " active_num=" << active_node_num << std::endl;
             //     continue;
             // }
+
+            /* correct deviation in supernode */
+            if(is_convergence && is_correct == false){
+                is_correct = true;
+                for(vertex_t i = 0; i < this->supernodes_num; i++){
+                    ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
+                    Node<vertex_t, value_t>& node = this->nodes[supernode.id];
+                    /* send to value by inner_edges */
+                    for(auto& edge : supernode.inner_edges){ // i -> adj
+                        value_t& value = this->nodes[edge.first].value; // adj's recvDelta
+                        value_t sendDelta; // i's 
+                        this->app_->g_index_func(i, supernode.data, supernode.data, node.out_adj, edge, sendDelta);
+                        this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
+                        super_send_cnt++;
+                    }
+                    /* send to oldDelta by inner_delta */
+                    for(auto& edge : supernode.inner_delta){ // i -> adj
+                        value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
+                        value_t sendDelta; // i's 
+                        this->app_->g_index_func(i, supernode.data, supernode.data, node.out_adj, edge, sendDelta);
+                        this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
+                        super_send_cnt++;
+                    }
+                }
+                continue;
+            }
 
             // if((is_convergence && active_node_num == 0) || step > FLAGS_max_iterater_num){
             if(is_convergence|| step > FLAGS_max_iterater_num){
