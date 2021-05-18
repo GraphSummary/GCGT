@@ -26,6 +26,7 @@
 #include "../tools/find_pattern.h"
 #include "../utils/bitset.h"
 #include "../utils/util.h"
+#include <random>
 
 using std::vector;
 using std::unordered_map;
@@ -82,6 +83,40 @@ public:
         fout.close();
     }
 
+  /**
+   * 通过采样确定阈值来筛选数据
+   * sample_size: 采样大小
+   * return 阈值
+   */
+   value_t Scheduled(int sample_size) {
+     vertex_t all_size = this->nodes_num;
+     if (all_size <= sample_size) {
+       return this->app_->default_v();
+     } else {
+       // 去重
+       std::unordered_set<int> id_set;
+       // random number generator
+       std::mt19937 gen(time(0));
+       std::uniform_int_distribution<> dis(0, all_size - 1);  // 给定范围 // 构造符合要求的随机数生成器
+       // 采样
+       vector<value_t> priority;
+       priority.resize(sample_size);
+       for (int i = 0; i < sample_size; i++) {
+         int rand_pos = dis(gen);
+         while (id_set.find(rand_pos) != id_set.end()) {
+           rand_pos = dis(gen);
+         }
+         id_set.insert(rand_pos);
+         this->app_->priority(priority[i], this->nodes[rand_pos].value, this->nodes[rand_pos].oldDelta);
+       }
+       // get the cut index, everything larger than the cut will be scheduled
+        sort(priority.begin(), priority.end());
+        int cut_index = sample_size * FLAGS_portion;  // 选择阈值位置
+        value_t threshold = priority[cut_index];  // 获得阈值, 保证一定是 >=0
+        return fabs(threshold);
+     }
+   }
+
     void start(){
         std::cout << "start..." << std::endl;
         init();
@@ -118,22 +153,25 @@ public:
         // LOG(INFO) << this->nodes[1].value << " " << this->nodes[1].oldDelta << " " << this->nodes[1].recvDelta;
 
         while(true){
+            step++;
             delta_sum = 0;
             is_convergence = true;
             next_modified_.parallel_clear(4);
+
+            // 采样
+            value_t pri = Scheduled(2000);
+            LOG(INFO) << pri;
 
             // send
             for(vertex_t batch = begin; batch < end; batch+=64){
                 vertex_t i = batch;
                 uint64_t word = curr_modified_.get_word(batch-begin); // 获得数组中的一个元素，每个元素64位，每位表示一个元素
-                // {
-                //     std::cout << "测试word： " << i << " word=" << word << std::endl;
-                // }
                 while (word != 0) {
                     if (word & 1) {
                         Node<vertex_t, value_t>& node = this->nodes[i];
                         // if(node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
-                        if(node.oldDelta < itrative_threshold && fabs(node.oldDelta - this->app_->default_v()) > FLAGS_convergence_threshold){
+                        // if(node.oldDelta >= pri && node.oldDelta < itrative_threshold && fabs(node.oldDelta - this->app_->default_v()) * this->nodes_num > FLAGS_convergence_threshold){
+                        if(node.oldDelta >= pri && node.oldDelta < itrative_threshold && fabs(node.oldDelta - this->app_->default_v()) * this->nodes_num > FLAGS_convergence_threshold){
                             if(this->Fc[i].size() == 1 && this->Fc[i][0] == i){
                                 // 超点send
                                 ExpandData<vertex_t, value_t>& supernode = this->expand_data[this->Fc_map[i]];
@@ -144,7 +182,8 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -154,7 +193,8 @@ public:
                                     value_t& value = this->nodes[edge.first].value; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -164,7 +204,8 @@ public:
                                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                                     value_t sendDelta; // i's 
                                     // this->app_->g_func(node.oldDelta, edge.second, sendDelta);
-                                    this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    // this->app_->g_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                                    this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
                                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                                     super_send_cnt++;
                                 }
@@ -199,54 +240,36 @@ public:
                 }
                 this->app_->accumulate(node.oldDelta, node.recvDelta); // updata delat
                 // if(node.oldDelta != this->app_->default_v()){ // 需要单独判断这个点是否是活跃点, 同时内部点不需要发消息，默认为非活跃
-                if(fabs(node.oldDelta - this->app_->default_v()) > FLAGS_convergence_threshold){ // 需要单独判断这个点是否是活跃点, 同时内部点不需要发消息，默认为非活跃
+                if(fabs(node.oldDelta - this->app_->default_v()) * this->nodes_num > FLAGS_convergence_threshold){ // 需要单独判断这个点是否是活跃点, 同时内部点不需要发消息，默认为非活跃
                     next_modified_.set_bit(i - begin);
+                    // std::cout << i << ": oldDelat" << node.oldDelta << " value=" << node.value << " old-def=" << fabs(node.oldDelta - this->app_->default_v()) << std::endl;
                 }
                 node.recvDelta = this->app_->default_v();
             }
 
             is_convergence = termCheck();
-            step++;
+            //debug
+            // {
+            //     for(vertex_t i = 0; i < this->nodes_num; i++){
+            //         Node<vertex_t, value_t>& node = this->nodes[i];
+            //         std::cout << "step=" << step << " i=" << i << " value=" <<  node.value << " olddelta=" << node.oldDelta <<  std::endl;
+            //     }
+            // }
             next_modified_.swap(curr_modified_);
             active_node_num = curr_modified_.parallel_count(4);
             if(step % 100 == 0)
                 LOG(INFO) << "step=" << step << " curr_modified_=" << active_node_num;
 
             // 更新阈值
-            if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
-                itrative_threshold += 15 + step*0.1;
-                threshold_change_cnt++;
-                std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << " active_num=" << active_node_num << std::endl;
-                continue;
-            }
+            // if(is_convergence && active_node_num != 0 && step < FLAGS_max_iterater_num){
+            //     itrative_threshold += 15 + step*0.1;
+            //     threshold_change_cnt++;
+            //     std::cout << "local convergence-----itrative_threshold=" << itrative_threshold <<  " threshold_change_cnt=" << threshold_change_cnt << " active_num=" << active_node_num << std::endl;
+            //     continue;
+            // }
 
-            if((is_convergence && active_node_num == 0) || step > FLAGS_max_iterater_num){
-                // supernode内值分配-超点send -> inner_edges
-                // for(vertex_t i = 0; i < this->supernodes_num; i++){
-                //     ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
-                //     if(supernode.data == this->app_->default_v()){
-                //         continue;
-                //     }
-                //     // 清空自己的值
-                //     this->nodes[supernode.id].value = this->app_->default_v();
-                //     // update value
-                //     for(auto& edge : supernode.inner_edges){ // i -> adj
-                //         value_t& value = this->nodes[edge.first].value; // adj's value
-                //         value_t sendDelta; // i's 
-                //         // this->app_->g_func(node.value, edge.second, sendDelta);
-                //         this->app_->g_func(supernode.id, supernode.data, 0, edge, sendDelta);
-                //         this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
-                //         super_send_cnt++;
-                //     }
-                //     // update delta by get oldDelta
-                //     for(auto& edge : supernode.inner_delta){
-                //         value_t& old_delta = this->nodes[edge.first].oldDelta; // adj's delta
-                //         value_t sendDelta; // i's 
-                //         this->app_->g_func(supernode.id, supernode.data, 0, edge, sendDelta);
-                //         this->app_->accumulate(old_delta, sendDelta); // sendDelta -> recvDelta
-                //         super_send_cnt++;
-                //     }
-                // }
+            // if((is_convergence && active_node_num == 0) || step > FLAGS_max_iterater_num){
+            if(is_convergence|| step > FLAGS_max_iterater_num){
                 break;
             }
         } 
@@ -376,8 +399,8 @@ int main(int argc,char **argv) {
     timer_next("find_pattern");
     worker.start_find(FLAGS_result_analyse);
     // return 0; // 测试
-    timer_next("write_pattern");
-    worker.write_supernode("./out/a_pattern");
+    // timer_next("write_pattern");
+    // worker.write_supernode("./out/a_pattern");
     timer_next("compute");
     worker.start();
     timer_next("write_result");
