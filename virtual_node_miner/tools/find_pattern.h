@@ -45,25 +45,86 @@ private:
 template<class vertex_t, class value_t>
 class FindPattern{
 public:
+    void read_data(std::string &line, vertex_t& u, vertex_t& v, value_t& w=1) {
+        std::string linestr(line);
+        int pos = linestr.find_first_of(" "); //找到第一个空格的位置
+        if (pos == -1) return; 
+
+        int source = atoi(linestr.substr(0, pos).c_str()); //字符串转换成数值  源点
+        vector<int> linkvec;
+        std::string links = linestr.substr(pos + 1);
+        // cout<<"links:"<<links<<endl;
+        if (*(links.end() - 1) != ' ') {
+            links = links + " ";
+        }
+        int spacepos = 0;
+        while ((spacepos = links.find_first_of(" ")) != links.npos) {
+            int to;
+            if (spacepos > 0) {
+                to = atoi(links.substr(0, spacepos).c_str());
+            }
+            else{
+                LOG(INFO) << "[read_data]: " << to << "，"<< line;
+            }
+            links = links.substr(spacepos + 1);
+            linkvec.push_back(to);
+        }
+        u = source;
+        v = linkvec[0];
+        if(linkvec.size() > 1){
+            w = linkvec[1]; // edge weight
+        }
+    }
+
     void load(const std::string &efile){
-        std::ifstream inFile(efile);
-        if(!inFile){
-           std::cout << "open file failed. " << efile <<std::endl;
+        // std::ifstream inFile(efile);
+        // if(!inFile){
+        //    std::cout << "open file failed. " << efile <<std::endl;
+        //     exit(0);
+        // }
+        // std::cout << "finish read file... " << efile <<std::endl;
+        // vertex_t u, v;
+        // value_t w;
+        // std::vector<Edge<vertex_t, value_t>> edges;
+        // vertex_t max_id;
+        // while (inFile >> u >> v >> w) {
+        //     assert(u >= 0);
+        //     assert(v >= 0);
+        //     assert(w >= 0);
+        //     max_id = std::max(max_id, u);
+        //     max_id = std::max(max_id, v);
+        //     edges.emplace_back(Edge<vertex_t, value_t>(u, v, w));
+        // }
+
+        std::cout << "read file... " << efile << std::endl;
+        std::ifstream inFile;
+        inFile.open(efile);
+        if (!inFile) {
+            LOG(INFO) << "open file failed. " << efile;
             exit(0);
         }
-        std::cout << "finish read file... " << efile <<std::endl;
+        char linechr[2024000];
         vertex_t u, v;
-        value_t w;
+        value_t w=1;
         std::vector<Edge<vertex_t, value_t>> edges;
         vertex_t max_id;
-        while (inFile >> u >> v >> w) {
+        while (inFile.getline(linechr, 2024000)) { //read a line of the input file, ensure the buffer is large enough
+            std::string line(linechr);
+            if(line.length() < 1 || line[0] == '#'){
+                continue;
+            }
+            read_data(line, u, v, w); //invoke api, get the value of key field and data field
             assert(u >= 0);
             assert(v >= 0);
             assert(w >= 0);
             max_id = std::max(max_id, u);
             max_id = std::max(max_id, v);
             edges.emplace_back(Edge<vertex_t, value_t>(u, v, w));
+            // std::cout << u << " " << v << " " << w << std::endl;
         }
+        inFile.close();
+        std::cout << "finish read file... " << efile <<std::endl;
+
 
         edges_num = edges.size();
         nodes = new Node<vertex_t, value_t>[max_id+1]; 
@@ -217,6 +278,9 @@ public:
         // expand_data.print_edge();
     }
 
+    /**
+     * 求索引时使用
+    */
     void init_node(const std::vector<vertex_t> &node_set, const vertex_t& source){
         value_t delta;
         value_t value;
@@ -228,19 +292,72 @@ public:
         }
     }
 
+    /**
+     * 正常的初始化
+    */
+    void init_node(){
+        // value_t delta;
+        // value_t value;
+        // vector<std::pair<vertex_t, value_t>> data;
+        // for(auto i : node_set){
+        //     app_->init_c(vertex_reverse_map[i], nodes[i].recvDelta, data);
+        //     this->nodes[i].oldDelta = app_->default_v();
+        //     app_->init_v(i, nodes[i].value, data);
+        // }
+        value_t delta;
+        value_t value;
+        vector<std::pair<vertex_t, value_t>> data;
+        for(vertex_t i = 0; i < this->nodes_num; i++){
+            this->app_->init_c(this->vertex_reverse_map[i], this->nodes[i].recvDelta, data);
+            this->nodes[i].oldDelta = this->app_->default_v();
+            this->app_->init_v(i, this->nodes[i].value, data);
+        }
+    }
+
     void run_to_convergence(std::vector<vertex_t> &node_set, const vertex_t source){
         bool is_convergence = false;
         int step = 0;
+        unordered_map<vertex_t, value_t> last_value;
+        float Diff = 0;
+        /* init last_value */
+        for(auto v : node_set){
+            last_value[v] = app_->default_v();
+        }
+
+        /* 最后需要: value和recvDelta */
         while(true){
             step++;
             is_convergence = true;
+
+            // debug
+            // {
+            //     for(auto u : node_set){
+            //         Node<vertex_t, value_t>& node = nodes[u];
+            //         std::cout << "step=" << step << " id=" << getOriginId(u) << " value=" << node.value << " oldDelta=" << node.oldDelta << 
+            //         " recvDelta=" << node.recvDelta << std::endl;     
+            //     }
+            // }   
+
+            // receive
+            for(auto v : node_set){
+                Node<vertex_t, value_t>& node = nodes[v];
+                // value_t old_value = node.value;
+                app_->accumulate(node.value, node.recvDelta); // delat -> value
+                // if(old_value != node.value){
+                // if(fabs(old_value - node.value) > FLAGS_convergence_threshold){
+                //     is_convergence = false;
+                // }
+                app_->accumulate(node.oldDelta, node.recvDelta); // updata delta
+                node.recvDelta = app_->default_v();
+            }
             // send
             for(auto v : node_set){
                 Node<vertex_t, value_t>& node = nodes[v];
-                if(fabs(node.oldDelta - app_->default_v()) > FLAGS_convergence_threshold){
+                // if(fabs(node.oldDelta - app_->default_v()) > FLAGS_convergence_threshold * 0.001){
                     for(auto &edge : node.out_adj){ // i -> adj
                         // if(Fc[edge.first].find(source) != Fc[edge.first].end()){ // 只发给内部点
-                        if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 只发给内部点
+                        // if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){ // 只发给内部点
+                        if(std::find(node_set.begin(), node_set.end(), edge.first) == node_set.end()){ // 只发个内部点
                             continue;
                         }
                         value_t& recvDelta = nodes[edge.first].recvDelta; // adj's recvDelta
@@ -250,23 +367,21 @@ public:
                         app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                     }
                     node.oldDelta = app_->default_v(); // delta发完需要清空 
-                }
+                // }
             }
-            // receive
+            // check convergence
+            Diff = 0;
             for(auto v : node_set){
                 Node<vertex_t, value_t>& node = nodes[v];
-                value_t old_value = node.value;
-                app_->accumulate(node.value, node.recvDelta); // delat -> value
-                // if(old_value != node.value){
-                if(fabs(old_value - node.value) > FLAGS_convergence_threshold){
-                    is_convergence = false;
-                    app_->accumulate(node.oldDelta, node.recvDelta); // updata delta
-                }
-                node.recvDelta = app_->default_v();
+                Diff += fabs(last_value[v] - node.value);
+                last_value[v] = node.value;
             }
-            if(is_convergence || step > 1000){
+
+            // if(is_convergence || step > 1000){
+            if(Diff * node_set.size() <= FLAGS_convergence_threshold || step > 1000){
+            // if(step == 2){
                 if(step > 1000){
-                    LOG(INFO) << "compress: step>1000";
+                    LOG(INFO) << "compress: step>1000 Diff=" << Diff;
                 }
                 break;
             }
@@ -333,26 +448,6 @@ public:
         /* first iterative calculation */
         run_to_convergence(node_set, source);
 
-        /* save old value */
-        // std::vector<value_t> old_value;
-        // old_value.resize(node_set.size());
-        // vertex_t i = 0;
-        // for(auto u : node_set){
-        //     Node<vertex_t, value_t>& node = nodes[u];
-        //     old_value[i++] = node.value;
-        // }
-
-        // /* second iterative calulation: delta_source = 1 */
-        // nodes[source].recvDelta = 1;
-        // run_to_convergence(node_set, source);
-
-        // /* get new weight  */
-        // i = 0;
-        // for(auto u : node_set){
-        //     Node<vertex_t, value_t>& node = nodes[u];
-        //     node.value = node.value - old_value[i++];
-        // }
-
         /**
          * create index in supernode 
          **/
@@ -362,38 +457,45 @@ public:
         unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
         value_t sendDelta;
 
-        // if(source == getNewId(1))
-        //     std::cout << "测试： " << getNewId(1) << " " << nodes[getNewId(1)].value << " " << nodes[getNewId(1)].oldDelta << " " << nodes[getNewId(1)].recvDelta << std::endl;
         for(auto u : node_set){
             Node<vertex_t, value_t>& node = nodes[u];
-            expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value/0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
-            expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, node.oldDelta/0.8)); // 为内部点缓存收敛时剩余的delta
-            for(auto &edge : node.out_adj){
-                // if(Fc[edge.first] != source){  // 可能会出现发给同一个点
-                if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){  // 保证edge.first是边界点
-                    // { // 测试
-                    //     if(source == getNewId(1))
-                    //         if(edge.first == source){
-                    //             std::cout << "测试：" << u << "->" << source << std::endl;
-                    //         }
-                    // }
-                    // app_->g_func(node.value, edge.second, sendDelta);
-                    app_->g_func(node.id, node.value, node.value, node.out_adj, edge, sendDelta);
-                    if(bound_map.find(edge.first) == bound_map.end()){
-                        // bound_map[edge.first] = node.value + edge.second;
-                        bound_map[edge.first] = sendDelta;
-                    }
-                    else{
-                        // bound_map[edge.first] = std::min(bound_map[edge.first], node.value + edge.second);
-                        app_->accumulate(bound_map[edge.first], sendDelta);
+            /* 过滤掉每个入口都建立索引导致的不必要索引(可能导致误差) */
+            /* 分别建立： value和delta的映射 */
+            if(fabs(node.value - app_->default_v()) * nodes_num > FLAGS_convergence_threshold ){
+                // expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, node.value/0.8)); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+                expand_data.inner_edges.emplace_back(std::pair<vertex_t, value_t>(u, app_->g_revfunc(node.value))); // 为结构加入直接指向内部点的最短距离边： source -> 内部id
+                // std::cout << getOriginId(u) << " value=" << node.value << std::endl;
+                for(auto &edge : node.out_adj){
+                    // if(Fc[edge.first] != source){  // 可能会出现发给同一个点
+                    // std::cout << getOriginId(u) << "->" << getOriginId(edge.first) << " value=" << node.value << std::endl;
+                    if(std::find(Fc[edge.first].begin(), Fc[edge.first].end(), source) == Fc[edge.first].end()){  // 保证edge.first是边界点
+                        // app_->g_func(node.value, edge.second, sendDelta);
+                        app_->g_func(node.id, node.value, node.value, node.out_adj, edge, sendDelta);
+                        if(bound_map.find(edge.first) == bound_map.end()){
+                            // bound_map[edge.first] = node.value + edge.second;
+                            bound_map[edge.first] = sendDelta;
+                        }
+                        else{
+                            // bound_map[edge.first] = std::min(bound_map[edge.first], node.value + edge.second);
+                            app_->accumulate(bound_map[edge.first], sendDelta);
+                        }
                     }
                 }
+            }
+            if(fabs(node.recvDelta - app_->default_v()) * nodes_num > FLAGS_convergence_threshold){
+                // expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, node.oldDelta/0.8)); // 为内部点缓存收敛时剩余的delta
+                // value_t allDelat = node.recvDelta;
+                // app_->accumulate(allDelat, node.value);
+                expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, app_->g_revfunc(node.recvDelta))); // 为内部点缓存收敛时剩余的delta
+                // expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, node.recvDelta)); // 为内部点缓存收敛时剩余的delta
+                // expand_data.inner_delta.emplace_back(std::pair<vertex_t, value_t>(u, app_->g_revfunc(allDelat))); // 为内部点缓存收敛时剩余的delta
             }
         }
         // std::cout << "source=" << source << std::endl;
         for(auto kv : bound_map){
             // 新边权= delta/d
-            expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second / 0.8)); 
+            // expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, kv.second / 0.8)); 
+            expand_data.bound_edges.emplace_back(std::pair<vertex_t, value_t>(kv.first, app_->g_revfunc(kv.second))); 
         } 
         // debug
         // {
@@ -417,6 +519,35 @@ public:
         // }
     }
 
+    /**
+     * 以超点为单位计算各个点的收敛值
+    */
+    void init_value_iter(const vertex_t superid){
+        std::vector<vertex_t> &node_set = expand_data[superid].ids; 
+        const vertex_t source = expand_data[superid].id;
+        /* init supernode */
+        // init_node(node_set);
+
+        /* iterative calculation */
+        run_to_convergence(node_set, source);
+
+        /* store value and delta */
+        value_t sendDelta = 0;
+        for(auto u : node_set){
+            Node<vertex_t, value_t>& node = nodes[u];
+            // app_->accumulate(init_value[u], node.value);
+            // app_->accumulate(init_delta[u], node.recvDelta);
+            for(auto &edge : node.out_adj){
+                if(std::find(node_set.begin(), node_set.end(), edge.first) == node_set.end()){  // 保证edge.first是边界点
+                    app_->g_func(node.id, node.value, node.value, node.out_adj, edge, sendDelta);
+                    #pragma omp critical
+                    {
+                        app_->accumulate(init_delta[edge.first], sendDelta);
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * 通过源s传播，找到s可达的点
@@ -653,36 +784,60 @@ public:
         unordered_set<vertex_t> visited_nodes;
         // add source
         visited_nodes.insert(source);
-        S.insert(source);
+        P.insert(source);
         for(auto u : nodes[source].out_adj){
-            if(visited_nodes.find(u.first) == visited_nodes.end()){
+            if(visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
                 D.push(u.first);
                 visited_nodes.insert(u.first);
             }
         }
         // std::cout << "source: " << getOriginId(source) << std::endl;
         float pre_socre = 0; // pre compressed score，这里是整个压缩结构的总体得分，不是待加入点的得分
-        while(!D.empty() && P.size() <= MAX_NODE_NUM){
+       /* while(!D.empty() && P.size() <= MAX_NODE_NUM){
             vertex_t d = D.front();
             D.pop();
-            if(Fc[d].size() == 1 && Fc[d][0] == d){
+            // if(Fc[d].size() == 1 && Fc[d][0] == d){  // 作为入口的点排除
+            if(Fc[d].size() > 0){  // 作为入口的点排除
                 continue;
             }
             // std::cout << "test: d=" << d << std::endl;
             int old_edge_num = 0;
-            int new_in_num = S.size();
-            int new_index_num = P.size() + O.size();
+            // int new_in_num = S.size();
+            // int new_index_num = P.size() + O.size();
+            int inner_edge_num = 0;
+            int bound_edge_num = 0;
             // compute old_edge_num
             for(auto v : S){
                 // old_edge_num += nodes[v].out_adj.size();
                 for(auto u : nodes[v].out_adj){
                     if(P.find(u.first) != P.end() || u.first == d){
                         old_edge_num++; // v -> P
+                        inner_edge_num++;
+                    }
+                    else{
+                        bound_edge_num++;
                     }
                 }
             }
             for(auto u : P){
                 old_edge_num += nodes[u].out_adj.size();
+                for(auto v : nodes[u].out_adj){
+                    if(P.find(v.first) != P.end() || v.first == d){
+                        inner_edge_num++;
+                    }
+                    else{
+                        bound_edge_num++;
+                    }
+                }
+            }
+            // if add d to supernode:
+            for(auto v : nodes[d].out_adj){
+                if(P.find(v.first) != P.end() || v.first == d){
+                    inner_edge_num++;
+                }
+                else{
+                    bound_edge_num++;
+                }
             }
             old_edge_num += nodes[d].out_adj.size();
             // compute new_in_num
@@ -698,34 +853,31 @@ public:
             //     }
             // }
             // compute new_index_num
-            new_index_num += 1; // if d insirt P
-            unordered_set<vertex_t> O_copy(O); // supernode's source, V^in
-            if(O_copy.find(d) != O_copy.end()){
-                O_copy.erase(d);
-                new_index_num--;
-            }
-            for(auto u : nodes[d].out_adj){
-                if(O_copy.find(u.first) == O_copy.end() && P.find(u.first) == P.end()){
-                    O_copy.insert(u.first);
-                    new_index_num++;
-                }
-            }
-            // 测试
-            // {
-            //     new_in_num = 1;
+            // new_index_num += 1; // if d insirt P
+            // unordered_set<vertex_t> O_copy(O); // supernode's source, V^in
+            // if(O_copy.find(d) != O_copy.end()){
+            //     O_copy.erase(d);
+            //     new_index_num--;
             // }
-            float now_score = old_edge_num * 1.0 / (new_in_num * new_index_num);
+            // for(auto u : nodes[d].out_adj){
+            //     if(O_copy.find(u.first) == O_copy.end() && P.find(u.first) == P.end()){
+            //         O_copy.insert(u.first);
+            //         new_index_num++;
+            //     }
+            // }
+            // float now_score = old_edge_num * 1.0 / (new_in_num * new_index_num);
+            float now_score = inner_edge_num * 1.0 / (P.size() + bound_edge_num);
             // float now_score = (old_edge_num * 1.0 - new_in_num * new_index_num) / old_edge_num;
             // std::cout << "d=" << getOriginId(d) << " pre_score=" << pre_socre << " now_score=" << now_score << " old_edge_num=" << old_edge_num << " new_in_num=" << new_in_num << " new_index_num=" << new_index_num << std::endl;
             // if(now_score >= pre_socre){
-            if(now_score >= pre_socre || now_score >= 1.12){
+            if((P.size() < 4 && now_score >= pre_socre) || now_score >= 2 ){
                 pre_socre = now_score;
                 P.insert(d);
                 // S.swap(S_copy);
-                O.swap(O_copy);
+                // O.swap(O_copy);
                 for(auto u : nodes[d].out_adj){
                     // if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first] == Fc_default_value){
-                    if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end()){
+                    if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
                         D.push(u.first);
                         visited_nodes.insert(u.first);
                     }
@@ -738,26 +890,152 @@ public:
                 //     }
                 // }
             }
+        }*/
+        
+        vertex_t inner_edge_num = 0;
+        vertex_t bound_edge_num = nodes[source].out_adj.size();
+        vertex_t temp_inner = 0;
+        vertex_t temp_bound = 0;
+        while(!D.empty() && P.size() <= MAX_NODE_NUM){
+            vertex_t d = D.front();
+            D.pop();
+            // if(Fc[d].size() == 1 && Fc[d][0] == d){  // 作为入口的点排除
+            if(Fc[d].size() > 0){  // 作为入口的点排除
+                continue;
+            }
+            // if d add to P:
+            temp_inner = inner_edge_num;
+            temp_bound = bound_edge_num;
+            for(auto u : nodes[d].in_adj){
+                if(P.find(u.first) != P.end()){
+                    temp_bound--;
+                    temp_inner++;
+                }
+            }
+            for(auto u : nodes[d].out_adj){
+                if(P.find(u.first) == P.end()){
+                    temp_bound++;
+                }
+                else{
+                    temp_inner++;
+                }
+            }
+            float now_score = temp_inner * 1.0 / (temp_bound + P.size());
+            if((P.size() < 4 && now_score >= pre_socre) || now_score >= 1.2 ){
+                pre_socre = now_score;
+                inner_edge_num = temp_inner;
+                bound_edge_num = temp_bound;
+                P.insert(d);
+                for(auto u : nodes[d].out_adj){
+                    if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
+                        D.push(u.first);
+                        visited_nodes.insert(u.first);
+                    }
+                }
+            }
         }
+
+        // 收集整个超点的所有入度点
+        S.clear();  // S是P的子集
+        for(auto p : P){
+            for(auto u : nodes[p].in_adj){
+                // if(Fc[u.first].size() != 0){ // 入口点不能在其它超点内
+                //     return ;
+                // }
+                if(P.find(u.first) == P.end()){ // 说明u.first是个外界点，且指向了p
+                    // S.insert(u.first);
+                    S.insert(p);
+                }
+            }
+        }
+        // debug
+        // {
+        //     // if(getOriginId(source) == 126024){
+        //     if(P.size() >= MIN_NODE_NUM && (P.find(getNewId(560237)) != P.end() || S.find(getNewId(560237)) != S.end())){
+        //         int inner_edge_num = 0;
+        //         int bound_edge_num = 0;
+        //         for(auto u : P){
+        //             for(auto v : nodes[u].out_adj){
+        //                 if(P.find(v.first) != P.end()){
+        //                     inner_edge_num++;
+        //                     std::cout << "in--- " << getOriginId(u) << "->" << getOriginId(v.first) << std::endl;
+        //                 }
+        //                 else{
+        //                     bound_edge_num++;
+        //                     std::cout << "out-- " << getOriginId(u) << "->" << getOriginId(v.first) << std::endl;
+        //                 }
+        //             }
+        //         }
+        //         LOG(INFO) << "测试：inner_edge_num=" << inner_edge_num << " bound_edge_num=" << bound_edge_num
+        //         << " socre=" << (inner_edge_num * 1.0 / (P.size() + bound_edge_num)) << " p.size=" << P.size();
+        //     }
+        // }
+
         if(P.size() >= MIN_NODE_NUM){
-            // std::cout << "------ build a supernode" << std::endl;
-            Fc[source].emplace_back(source);
-            for(auto u : P){
-                Fc[u].emplace_back(source);
-                // std::cout << getOriginId(u) << " ";
-            }  
-            // std::cout << std::endl;
-            // build a supernode
-            vertex_t supernoed_id = supernodes_num;
-            Fc_map[source] = supernoed_id;
-            expand_data[supernoed_id].id = source;
-            expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), P.begin(), P.end());
-            expand_data[supernoed_id].ids.emplace_back(source);
-            supernodes_num++;
+            // std::cout << "------ build a supernode source=" << getOriginId(source) << std::endl;
+            // LOG(INFO) << "测试：inner_edge_num=" << inner_edge_num << " bound_edge_num=" << bound_edge_num << " socre=" << (inner_edge_num * 1.0 / (P.size() + bound_edge_num)) << " p.size=" << P.size();
+            /* 为每个入口建立一套索引 */
+            for(auto source: S){
+                Fc[source].emplace_back(source); // 保证，自己在Fc[source][0]的位置
+            }
+            supernode_ids.emplace_back(supernodes_num);
+            for(auto source : S){
+                for(auto u : P){
+                    if(source != u){
+                        Fc[u].emplace_back(source);
+                    }
+                }  
+                // std::cout << std::endl;
+                // build a supernode
+                vertex_t supernoed_id = supernodes_num;
+                Fc_map[source] = supernoed_id;
+                expand_data[supernoed_id].id = source;
+                expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), P.begin(), P.end());
+                if(P.find(source) == P.end()){
+                    expand_data[supernoed_id].ids.emplace_back(source);
+                }
+                supernodes_num++;
+            }
+            // for(auto source : S){
+            //     std::cout << "source: " << getOriginId(source) << " " << Fc[source].size() << std::endl;
+            //     for(auto u : Fc[source]){
+            //         std::cout << getOriginId(u) << " ";
+            //     }
+            //     std::cout << " ---" << std::endl;
+            // }
         }
         // else{
         //     std::cout << "=== no find ===" << std::endl;
         // }
+    }
+
+    /**
+     * 查找path
+    */
+    void find_path(const vertex_t source){
+        unordered_set<vertex_t> P; // inner node
+        vertex_t next_node = source;
+        while(nodes[next_node].out_adj.size() == 1 && P.size() < MAX_NODE_NUM && Fc[next_node].size() == 0){
+            if(P.find(next_node) == P.end()){
+                P.insert(next_node);
+                next_node = nodes[next_node].out_adj[0].first;
+            }
+            else{
+                break;
+            }
+        }
+        if(P.size() >= MIN_NODE_NUM){
+            Fc[source].emplace_back(source);
+            for(auto p : P){
+                Fc[p].emplace_back(source);
+            }
+            vertex_t supernoed_id = supernodes_num;
+            Fc_map[source] = supernoed_id;
+            expand_data[supernoed_id].id = source;
+            supernode_ids.emplace_back(supernoed_id); // 只存一份
+            expand_data[supernoed_id].ids.insert(expand_data[supernoed_id].ids.begin(), P.begin(), P.end());
+            supernodes_num++;
+        }
     }
 
     void write_supernode(const std::string &efile){
@@ -784,10 +1062,15 @@ public:
             for(auto edge : expand_data[i].inner_edges){
                 outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
             }
+            outfile << "inner_delta(" << expand_data[i].inner_delta.size() << "):\n";
+            for(auto edge : expand_data[i].inner_delta){
+                outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
+            }
             outfile << "bound_edges(" << expand_data[i].bound_edges.size() << "):\n";
             for(auto edge : expand_data[i].bound_edges){
                 outfile << getOriginId(edge.first) << ": " << edge.second << std::endl;
             }
+            outfile << "\n";
         }
     }
 
@@ -799,10 +1082,10 @@ public:
         // for(vertex_t i = 0; i < nodes_num; i++) Fc[i] = Fc_default_value; // 默认值
         Fc.resize(nodes_num);
         // init expand_data
-        expand_data = new ExpandData<vertex_t, value_t>[nodes_num/MIN_NODE_NUM];
+        expand_data = new ExpandData<vertex_t, value_t>[nodes_num];
 
         std::cout << "start compress" << std::endl;
-        // single source supernode
+        /* find single source supernode */
 /*        for(vertex_t i = 0; i < nodes_num; i++){
             if(Fc[i] != Fc_default_value) continue;
             vertex_t source = i; // 指定一个源点
@@ -819,20 +1102,28 @@ public:
             }
         }
 */
-        // multi-source supernode
+        /* find multi-source supernode */
         for(vertex_t i = 0; i < nodes_num; i++){
             if(Fc[i].size() > 0) continue;
-            vertex_t source = i; // 指定一个源点
-            // std::cout << "source=" << vertex_reverse_map[i] << std::endl;
-            find_multi_source_supernode(source);
+            find_multi_source_supernode(i);
         
             if(i % 10000 == 0){
                std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
             }
         }
+        LOG(INFO) << "find multi-source supernode...";
+        /* find path */
+        // for(vertex_t i = 0; i < nodes_num; i++){
+        //     if(Fc[i].size() > 0) continue;
+        //     find_path(i);
+        //     if(i % 10000 == 0){
+        //        std::cout << "----id=" << i << " supernodes_num=" << supernodes_num << std::endl;
+        //     }
+        // }
+        LOG(INFO) << "find finish... start compute index...";
 
-        // 为每个结构计算内部边权
-#pragma omp parallel for //num_threads(12)
+        /* 为每个结构计算index */
+// #pragma omp parallel for //num_threads(12)
         for(vertex_t i = 0; i < supernodes_num; i++){
             // 利用Dijkstra求最短路径
             // Dijkstra(expand_data[i]);
@@ -846,6 +1137,29 @@ public:
                 LOG(INFO) << "no this app....";
                 exit(0);
             }
+            if(i % 10000 == 0){
+               std::cout << "----id=" << i << " computing index" << std::endl;
+            }
+        }
+// #pragma omp barrier
+
+        LOG(INFO) << "find index... start compute init value...";
+        /* 超点内部初始化 */
+        init_node();
+        init_delta.resize(nodes_num);
+        init_value.resize(nodes_num);
+        for(vertex_t i = 0; i < this->nodes_num; i++){
+            init_delta[i] = this->app_->default_v();
+            init_value[i] = this->app_->default_v();
+        }
+        vertex_t spn_num = supernode_ids.size();
+        LOG(INFO) << "--- supernode_ids.size=" << spn_num;
+#pragma omp parallel for
+        for(vertex_t i = 0; i < spn_num; i++){
+            init_value_iter(supernode_ids[i]);
+            if(i % 100 == 0){
+               std::cout << "----id=" << i << " computing init value" << std::endl;
+            }
         }
 #pragma omp barrier
 
@@ -854,10 +1168,16 @@ public:
         vertex_t bound_edges_num = 0;
         // vertex_t supernodes_comtain_num = supernodes_inner_num + supernodes_bound_num;
         vertex_t supernodes_comtain_num = 0;
+        vertex_t max_node_num = 0;
+        vertex_t max_inner_edges_num = 0;
+        vertex_t max_bound_edges_num = 0;
         for(vertex_t i = 0; i < supernodes_num; i++){
             inner_edges_num += expand_data[i].inner_edges.size();
             bound_edges_num += expand_data[i].bound_edges.size();
             supernodes_comtain_num += expand_data[i].ids.size();
+            max_node_num = std::max(max_node_num, (int)expand_data[i].ids.size());
+            max_inner_edges_num = std::max(max_inner_edges_num, (int)expand_data[i].inner_edges.size());
+            max_bound_edges_num = std::max(max_bound_edges_num, (int)expand_data[i].bound_edges.size());
         }
 
         // 测试
@@ -876,7 +1196,10 @@ public:
         std::cout << "bound_edges_num=" << bound_edges_num  << std::endl; 
         std::cout << "supernodes_comtain_num/nodes_num=" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
         std::cout << "supernodes_index/edges_num=" << ((inner_edges_num+bound_edges_num)*1.0/edges_num)  << std::endl; 
-        
+        std::cout << "max_node_num=" << max_node_num << std::endl; 
+        std::cout << "max_inner_edges_num=" << max_inner_edges_num << std::endl; 
+        std::cout << "max_bound_edges_num=" << max_bound_edges_num << std::endl; 
+
         return ; //测试
 
         // 统计结果写入文件
@@ -1008,8 +1331,8 @@ public:
     vertex_t edges_num=0;
     vertex_t supernodes_num=0;
     vertex_t MAX_HOP=4; // 查找的跳数
-    vertex_t MAX_NODE_NUM=100; // 结构内包含的最大顶点数量
-    vertex_t MIN_NODE_NUM=4;   // 结构内包含的最小顶点数量
+    vertex_t MAX_NODE_NUM= 100; // 结构内包含的最大顶点数量
+    vertex_t MIN_NODE_NUM=6;   // 结构内包含的最小顶点数量
     // vertex_t *Fc; // fc[x]=s, s->x
     vector<vector<vertex_t>> Fc; // fc[x]=s, s->x
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
@@ -1017,6 +1340,9 @@ public:
     const int Fc_map_default_value = -1; // Fc_map的默认值
     std::vector<UpdateEdge<vertex_t, value_t>> update_edges; // 存储更新的边
     IterateKernel<vertex_t, value_t, std::vector<std::pair<vertex_t, value_t>>> *app_; 
+    std::vector<vertex_t> supernode_ids; // 超点id
+    std::vector<value_t> init_value; // 初始value
+    std::vector<value_t> init_delta; // 初始delta
 };  
 
 // int main(int argc,char *argv[]) {
