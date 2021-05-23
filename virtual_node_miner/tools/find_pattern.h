@@ -378,10 +378,10 @@ public:
             }
 
             // if(is_convergence || step > 1000){
-            if(Diff * node_set.size() <= FLAGS_convergence_threshold || step > 1000){
+            if(Diff * node_set.size() <= FLAGS_convergence_threshold || step > 200){
             // if(step == 2){
-                if(step > 1000){
-                    LOG(INFO) << "compress: step>1000 Diff=" << Diff;
+                if(step > 200){
+                    LOG(INFO) << "compress: step>200 Diff=" << Diff;
                 }
                 break;
             }
@@ -777,18 +777,22 @@ public:
      * 查找多入口的密集超点
     */
     void find_multi_source_supernode(const vertex_t source){
-        unordered_set<vertex_t> S; // supernode's source, V^in
-        unordered_set<vertex_t> P; // inner node, V
-        unordered_set<vertex_t> O; // inner node, V^out
+        unordered_set<vertex_t> S; // 属于P,从外界有入边的点
+        unordered_set<vertex_t> P; // inner node, 只有内部入边的点
+        unordered_set<vertex_t> O; // V^out，内部点的出边指向的外部点
         std::queue<vertex_t> D; // candidate queue
         unordered_set<vertex_t> visited_nodes;
         // add source
         visited_nodes.insert(source);
         P.insert(source);
+        S.insert(source);
         for(auto u : nodes[source].out_adj){
             if(visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
                 D.push(u.first);
                 visited_nodes.insert(u.first);
+            }
+            if(O.find(u.first) == O.end()){ // 排除自边
+                O.insert(u.first);
             }
         }
         // std::cout << "source: " << getOriginId(source) << std::endl;
@@ -904,12 +908,16 @@ public:
                 continue;
             }
             // if d add to P:
+            bool is_s = false;
             temp_inner = inner_edge_num;
             temp_bound = bound_edge_num;
             for(auto u : nodes[d].in_adj){
                 if(P.find(u.first) != P.end()){
                     temp_bound--;
                     temp_inner++;
+                }
+                else{
+                    is_s = true;
                 }
             }
             for(auto u : nodes[d].out_adj){
@@ -920,14 +928,62 @@ public:
                     temp_inner++;
                 }
             }
+            // update S/P
+            unordered_set<vertex_t> temp_O;
+            unordered_set<vertex_t> temp_S;
+            // for(auto s : S){
+            //     for(auto u : nodes[s].in_adj){
+            //         if(P.find(u.first) == P.end() && u.first != d){
+            //             temp_S.insert(s);
+            //         }
+            //     }
+            // }
+            temp_S.insert(S.begin(), S.end());
+            for(auto v : nodes[d].out_adj){
+                if(S.find(v.first) == S.end()){
+                    bool flag = true;
+                    for(auto u : nodes[v.first].in_adj){
+                        if(P.find(u.first) == P.end() && u.first != d){
+                            flag = false;
+                            break;
+                        }
+                    }
+                    if(flag){
+                        temp_S.erase(v.first);
+                    }
+                }
+            }
+            if(is_s){
+                temp_S.insert(d);
+            }
+            temp_O.insert(O.begin(), O.end());
+            temp_O.erase(d);
+            for(auto u : nodes[d].out_adj){
+                if(P.find(u.first) == P.end() && u.first != d){
+                    temp_O.insert(u.first);
+                }
+            }
             float now_score = temp_inner * 1.0 / (temp_bound + P.size());
-            if((P.size() < 4 && now_score >= pre_socre) || now_score >= 1.2 ){
+            // {
+            //     std::cout << "d=" << getOriginId(d) << " temp_in=" << temp_inner << " temp=out=" << temp_bound << std::endl; 
+            //     std::cout << "---now_score=" << now_score << " s.size=" << temp_S.size() << " o.size=" << temp_O.size() << std::endl;
+            //     for(auto u : temp_O){
+            //         std::cout << u << " ";
+            //     }
+            //     std::cout << std::endl;
+            // }
+            
+            // if((P.size() < 4 && now_score >= pre_socre) || (now_score >= 0. && temp_S.size() * temp_O.size() < temp_inner * 0.9)){
+            if((P.size() < 6) || (temp_S.size() * temp_O.size() <= temp_inner * 0.9)){
+                temp_O.swap(O);
+                temp_S.swap(S);
+
                 pre_socre = now_score;
                 inner_edge_num = temp_inner;
                 bound_edge_num = temp_bound;
                 P.insert(d);
                 for(auto u : nodes[d].out_adj){
-                    if(P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
+                    if(Fc[u.first].size() == 0 && P.find(u.first) == P.end() && visited_nodes.find(u.first) == visited_nodes.end()){
                         D.push(u.first);
                         visited_nodes.insert(u.first);
                     }
@@ -936,18 +992,19 @@ public:
         }
 
         // 收集整个超点的所有入度点
-        S.clear();  // S是P的子集
-        for(auto p : P){
-            for(auto u : nodes[p].in_adj){
-                // if(Fc[u.first].size() != 0){ // 入口点不能在其它超点内
-                //     return ;
-                // }
-                if(P.find(u.first) == P.end()){ // 说明u.first是个外界点，且指向了p
-                    // S.insert(u.first);
-                    S.insert(p);
-                }
-            }
-        }
+        // S.clear();  // S是P的子集
+        // for(auto p : P){
+        //     for(auto u : nodes[p].in_adj){
+        //         // if(Fc[u.first].size() != 0){ // 入口点不能在其它超点内
+        //         //     return ;
+        //         // }
+        //         if(P.find(u.first) == P.end()){ // 说明u.first是个外界点，且指向了p
+        //             // S.insert(u.first);
+        //             S.insert(p);
+        //         }
+        //     }
+        // }
+
         // debug
         // {
         //     // if(getOriginId(source) == 126024){
@@ -1074,6 +1131,26 @@ public:
         }
     }
 
+    void compute_index(const vertex_t j, const vertex_t spn_num){
+        for(vertex_t i = supernode_ids[j]; (j < spn_num-1 && i < supernode_ids[j+1]) || (j == spn_num-1 && i < supernodes_num); i++){
+            // 利用Dijkstra求最短路径
+            // Dijkstra(expand_data[i]);
+            if(FLAGS_app == "sssp"){
+                init_ExpandData(expand_data[i]); // traversal: sssp
+            }
+            else if(FLAGS_app == "php" || FLAGS_app == "pagerank"){
+                init_ExpandData_iter(expand_data[i]); // iterative: pr, php
+            }
+            else{
+                LOG(INFO) << "no this app....";
+                exit(0);
+            }
+            if(i % 5000 == 0){
+            std::cout << "----id=" << i << " computing index" << std::endl;
+            }
+        }
+    }
+  
     void start_find(const std::string &result_analyse_file=""){
         // init app.weight_sum
         this->app_->iterate_begin(this->nodes, this->nodes_num);
@@ -1122,26 +1199,13 @@ public:
         // }
         LOG(INFO) << "find finish... start compute index...";
 
+        vertex_t spn_num = supernode_ids.size();
         /* 为每个结构计算index */
-// #pragma omp parallel for //num_threads(12)
-        for(vertex_t i = 0; i < supernodes_num; i++){
-            // 利用Dijkstra求最短路径
-            // Dijkstra(expand_data[i]);
-            if(FLAGS_app == "sssp"){
-                init_ExpandData(expand_data[i]); // traversal: sssp
-            }
-            else if(FLAGS_app == "php" || FLAGS_app == "pagerank"){
-                init_ExpandData_iter(expand_data[i]); // iterative: pr, php
-            }
-            else{
-                LOG(INFO) << "no this app....";
-                exit(0);
-            }
-            if(i % 10000 == 0){
-               std::cout << "----id=" << i << " computing index" << std::endl;
-            }
+#pragma omp parallel for //num_threads(12)
+        for(vertex_t j = 0; j < spn_num; j++){
+            compute_index(j, spn_num);
         }
-// #pragma omp barrier
+#pragma omp barrier
 
         LOG(INFO) << "find index... start compute init value...";
         /* 超点内部初始化 */
@@ -1152,7 +1216,6 @@ public:
             init_delta[i] = this->app_->default_v();
             init_value[i] = this->app_->default_v();
         }
-        vertex_t spn_num = supernode_ids.size();
         LOG(INFO) << "--- supernode_ids.size=" << spn_num;
 #pragma omp parallel for
         for(vertex_t i = 0; i < spn_num; i++){
@@ -1199,6 +1262,8 @@ public:
         std::cout << "max_node_num=" << max_node_num << std::endl; 
         std::cout << "max_inner_edges_num=" << max_inner_edges_num << std::endl; 
         std::cout << "max_bound_edges_num=" << max_bound_edges_num << std::endl; 
+        std::cout << "MAX_NODE_NUM:" << MAX_NODE_NUM  << std::endl; 
+        std::cout << "MIN_NODE_NUM:" << MIN_NODE_NUM  << std::endl; 
 
         return ; //测试
 
@@ -1216,6 +1281,8 @@ public:
         outfile << "bound_edges_num:" << bound_edges_num  << std::endl; 
         outfile << "supernodes_comtain_num/nodes_num:" << (supernodes_comtain_num*1.0/nodes_num)  << std::endl; 
         outfile << "supernodes_index/edges_num:" << ((inner_edges_num+bound_edges_num)*1.0/edges_num)  << std::endl; 
+        outfile << "MAX_NODE_NUM:" << MAX_NODE_NUM  << std::endl; 
+        outfile << "MIN_NODE_NUM:" << MIN_NODE_NUM  << std::endl; 
     }
 
     vertex_t getOriginId(const vertex_t newid){
@@ -1331,8 +1398,8 @@ public:
     vertex_t edges_num=0;
     vertex_t supernodes_num=0;
     vertex_t MAX_HOP=4; // 查找的跳数
-    vertex_t MAX_NODE_NUM= 100; // 结构内包含的最大顶点数量
-    vertex_t MIN_NODE_NUM=6;   // 结构内包含的最小顶点数量
+    vertex_t MAX_NODE_NUM= 200; // 结构内包含的最大顶点数量
+    vertex_t MIN_NODE_NUM=8;   // 结构内包含的最小顶点数量
     // vertex_t *Fc; // fc[x]=s, s->x
     vector<vector<vertex_t>> Fc; // fc[x]=s, s->x
     ExpandData<vertex_t, value_t> *expand_data; // 每个结构内信息
