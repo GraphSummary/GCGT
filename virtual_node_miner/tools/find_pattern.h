@@ -452,6 +452,7 @@ public:
          * create index in supernode 
          **/
         expand_data.inner_edges.clear();
+        expand_data.inner_delta.clear();
         expand_data.bound_edges.clear();
         // 为结构加入直接指向外部点的最短距离边： source -> 外部id
         unordered_map<vertex_t, value_t> bound_map;  // out_node: dist(out_node)
@@ -785,7 +786,12 @@ public:
         // add source
         visited_nodes.insert(source);
         P.insert(source);
-        S.insert(source);
+        for(auto u : nodes[source].in_adj){
+            if(u.first != source){
+                S.insert(source);
+                break;
+            }
+        }
         for(auto u : nodes[source].out_adj){
             if(visited_nodes.find(u.first) == visited_nodes.end() && Fc[u.first].size() == 0){
                 D.push(u.first);
@@ -940,7 +946,7 @@ public:
             // }
             temp_S.insert(S.begin(), S.end());
             for(auto v : nodes[d].out_adj){
-                if(S.find(v.first) == S.end()){
+                if(S.find(v.first) != S.end()){
                     bool flag = true;
                     for(auto u : nodes[v.first].in_adj){
                         if(P.find(u.first) == P.end() && u.first != d){
@@ -964,17 +970,8 @@ public:
                 }
             }
             float now_score = temp_inner * 1.0 / (temp_bound + P.size());
-            // {
-            //     std::cout << "d=" << getOriginId(d) << " temp_in=" << temp_inner << " temp=out=" << temp_bound << std::endl; 
-            //     std::cout << "---now_score=" << now_score << " s.size=" << temp_S.size() << " o.size=" << temp_O.size() << std::endl;
-            //     for(auto u : temp_O){
-            //         std::cout << u << " ";
-            //     }
-            //     std::cout << std::endl;
-            // }
-            
-            // if((P.size() < 4 && now_score >= pre_socre) || (now_score >= 0. && temp_S.size() * temp_O.size() < temp_inner * 0.9)){
-            if((P.size() < 6) || (temp_S.size() * temp_O.size() <= temp_inner * 0.9)){
+            // if((P.size() < 4 && now_score >= pre_socre) || (now_score >= 1.2 && temp_S.size() * temp_O.size() < temp_inner * 1)){
+            if((P.size() < 4) || (temp_S.size() * temp_O.size() < temp_inner * 0.9)){
                 temp_O.swap(O);
                 temp_S.swap(S);
 
@@ -991,46 +988,7 @@ public:
             }
         }
 
-        // 收集整个超点的所有入度点
-        // S.clear();  // S是P的子集
-        // for(auto p : P){
-        //     for(auto u : nodes[p].in_adj){
-        //         // if(Fc[u.first].size() != 0){ // 入口点不能在其它超点内
-        //         //     return ;
-        //         // }
-        //         if(P.find(u.first) == P.end()){ // 说明u.first是个外界点，且指向了p
-        //             // S.insert(u.first);
-        //             S.insert(p);
-        //         }
-        //     }
-        // }
-
-        // debug
-        // {
-        //     // if(getOriginId(source) == 126024){
-        //     if(P.size() >= MIN_NODE_NUM && (P.find(getNewId(560237)) != P.end() || S.find(getNewId(560237)) != S.end())){
-        //         int inner_edge_num = 0;
-        //         int bound_edge_num = 0;
-        //         for(auto u : P){
-        //             for(auto v : nodes[u].out_adj){
-        //                 if(P.find(v.first) != P.end()){
-        //                     inner_edge_num++;
-        //                     std::cout << "in--- " << getOriginId(u) << "->" << getOriginId(v.first) << std::endl;
-        //                 }
-        //                 else{
-        //                     bound_edge_num++;
-        //                     std::cout << "out-- " << getOriginId(u) << "->" << getOriginId(v.first) << std::endl;
-        //                 }
-        //             }
-        //         }
-        //         LOG(INFO) << "测试：inner_edge_num=" << inner_edge_num << " bound_edge_num=" << bound_edge_num
-        //         << " socre=" << (inner_edge_num * 1.0 / (P.size() + bound_edge_num)) << " p.size=" << P.size();
-        //     }
-        // }
-
         if(P.size() >= MIN_NODE_NUM){
-            // std::cout << "------ build a supernode source=" << getOriginId(source) << std::endl;
-            // LOG(INFO) << "测试：inner_edge_num=" << inner_edge_num << " bound_edge_num=" << bound_edge_num << " socre=" << (inner_edge_num * 1.0 / (P.size() + bound_edge_num)) << " p.size=" << P.size();
             /* 为每个入口建立一套索引 */
             for(auto source: S){
                 Fc[source].emplace_back(source); // 保证，自己在Fc[source][0]的位置
@@ -1053,17 +1011,7 @@ public:
                 }
                 supernodes_num++;
             }
-            // for(auto source : S){
-            //     std::cout << "source: " << getOriginId(source) << " " << Fc[source].size() << std::endl;
-            //     for(auto u : Fc[source]){
-            //         std::cout << getOriginId(u) << " ";
-            //     }
-            //     std::cout << " ---" << std::endl;
-            // }
         }
-        // else{
-        //     std::cout << "=== no find ===" << std::endl;
-        // }
     }
 
     /**
@@ -1237,10 +1185,12 @@ public:
         for(vertex_t i = 0; i < supernodes_num; i++){
             inner_edges_num += expand_data[i].inner_edges.size();
             bound_edges_num += expand_data[i].bound_edges.size();
-            supernodes_comtain_num += expand_data[i].ids.size();
             max_node_num = std::max(max_node_num, (int)expand_data[i].ids.size());
             max_inner_edges_num = std::max(max_inner_edges_num, (int)expand_data[i].inner_edges.size());
             max_bound_edges_num = std::max(max_bound_edges_num, (int)expand_data[i].bound_edges.size());
+        }
+        for(auto i : supernode_ids){
+            supernodes_comtain_num += expand_data[i].ids.size();
         }
 
         // 测试
@@ -1264,8 +1214,6 @@ public:
         std::cout << "max_bound_edges_num=" << max_bound_edges_num << std::endl; 
         std::cout << "MAX_NODE_NUM:" << MAX_NODE_NUM  << std::endl; 
         std::cout << "MIN_NODE_NUM:" << MIN_NODE_NUM  << std::endl; 
-
-        return ; //测试
 
         // 统计结果写入文件
         ofstream outfile(result_analyse_file, std::ios::app);
@@ -1398,7 +1346,7 @@ public:
     vertex_t edges_num=0;
     vertex_t supernodes_num=0;
     vertex_t MAX_HOP=4; // 查找的跳数
-    vertex_t MAX_NODE_NUM= 200; // 结构内包含的最大顶点数量
+    vertex_t MAX_NODE_NUM=150; // 结构内包含的最大顶点数量
     vertex_t MIN_NODE_NUM=8;   // 结构内包含的最小顶点数量
     // vertex_t *Fc; // fc[x]=s, s->x
     vector<vector<vertex_t>> Fc; // fc[x]=s, s->x
