@@ -188,6 +188,7 @@ public:
             for(auto i : normal_node_ids){
                 Node<vertex_t, value_t>& node = this->nodes[i];
                 if(node.oldDelta >= pri && node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
+                // if( node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
                     for(auto& edge : node.out_adj){ // i -> adj
                         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                         value_t sendDelta; // i's 
@@ -203,18 +204,21 @@ public:
             for(vertex_t i = 0; i < this->supernodes_num; i++){
                 ExpandData<vertex_t, value_t>& supernode = this->expand_data[i];
                 Node<vertex_t, value_t>& node = this->nodes[supernode.id];
-                if(node.oldDelta >= pri && node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
+                // node不用发给自己,通过超边直接发送recvDelta
+                if(node.recvDelta >= pri && node.recvDelta < itrative_threshold && node.recvDelta != this->app_->default_v()){
+                // if(node.oldDelta < itrative_threshold && node.oldDelta != this->app_->default_v()){
                     /* send to delat by bound_edges */
                     for(auto& edge : supernode.bound_edges){ // i -> adj
                         value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                         value_t sendDelta; // i's 
-                        this->app_->g_index_func(i, node.oldDelta, node.value, node.out_adj, edge, sendDelta);
+                        this->app_->g_index_func(i, node.recvDelta, node.value, node.out_adj, edge, sendDelta); 
                         this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                         super_send_cnt++;
                     }
                     value_t& recvDelta = supernode.data;
-                    this->app_->accumulate(recvDelta, node.oldDelta); // 暂存oldDelta
+                    this->app_->accumulate(recvDelta, node.recvDelta); // 暂存oldDelta
                     node.oldDelta = this->app_->default_v(); // delta发完需要清空
+                    node.recvDelta = this->app_->default_v(); // delta发完需要清空
                 }
             }
             // // send
@@ -332,7 +336,7 @@ public:
                 for(auto& edge : supernode.inner_edges){ // i -> adj
                     value_t& value = this->nodes[edge.first].value; // adj's recvDelta
                     value_t sendDelta; // i's 
-                    this->app_->g_index_func(i, supernode.data, supernode.data, node.out_adj, edge, sendDelta);
+                    this->app_->g_index_func(i, supernode.data, supernode.data, supernode.inner_edges, edge, sendDelta);
                     this->app_->accumulate(value, sendDelta); // sendDelta -> recvDelta
                     super_send_cnt++;
                 }
@@ -340,7 +344,7 @@ public:
                 for(auto& edge : supernode.inner_delta){ // i -> adj
                     value_t& recvDelta = this->nodes[edge.first].recvDelta; // adj's recvDelta
                     value_t sendDelta; // i's 
-                    this->app_->g_index_func(i, supernode.data, supernode.data, node.out_adj, edge, sendDelta);
+                    this->app_->g_index_func(i, supernode.data, supernode.data, supernode.inner_delta, edge, sendDelta);
                     this->app_->accumulate(recvDelta, sendDelta); // sendDelta -> recvDelta
                     super_send_cnt++;
                 }
@@ -412,7 +416,7 @@ private:
             last_values[u] = this->nodes[u].value;
         }
 
-        // LOG(INFO) << "Diff: " << diff_sum;
+        LOG(INFO) << "Diff: " << diff_sum;
 
         terminate_checking_time_ += grape::GetCurrentTime();
 
